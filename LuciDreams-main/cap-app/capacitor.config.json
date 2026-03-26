@@ -1,0 +1,9 @@
+{
+  "appId": "io.lucidreams.cap",
+  "appName": "LuciDreams",
+  "webDir": "www",
+  "server": {},
+  "ios": {
+    "contentInset": "automatic"
+  }
+}

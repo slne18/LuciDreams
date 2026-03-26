@@ -1,0 +1,6 @@
+## macOS
+.DS_Store
+
+## Service account credentials (never commit secrets)
+lucidreans-firebase-adminsdk-fbsvc-4b27ed98c4.json
+**/*firebase-adminsdk*.json

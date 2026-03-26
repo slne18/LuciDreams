@@ -1,0 +1,52 @@
+PODS:
+  - Capacitor (6.2.1):
+    - CapacitorCordova
+  - CapacitorCommunityNativeAudio (6.0.0):
+    - Capacitor
+  - CapacitorCommunityVolumeButtons (6.0.1):
+    - Capacitor
+  - CapacitorCordova (6.2.1)
+  - CapacitorFilesystem (6.0.4):
+    - Capacitor
+  - CapacitorHaptics (6.0.3):
+    - Capacitor
+  - CapawesomeCapacitorTorch (6.2.1):
+    - Capacitor
+
+DEPENDENCIES:
+  - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorCommunityNativeAudio (from `../../node_modules/@capacitor-community/native-audio`)"
+  - "CapacitorCommunityVolumeButtons (from `../../node_modules/@capacitor-community/volume-buttons`)"
+  - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
+  - "CapacitorHaptics (from `../../node_modules/@capacitor/haptics`)"
+  - "CapawesomeCapacitorTorch (from `../../node_modules/@capawesome/capacitor-torch`)"
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorCommunityNativeAudio:
+    :path: "../../node_modules/@capacitor-community/native-audio"
+  CapacitorCommunityVolumeButtons:
+    :path: "../../node_modules/@capacitor-community/volume-buttons"
+  CapacitorCordova:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorFilesystem:
+    :path: "../../node_modules/@capacitor/filesystem"
+  CapacitorHaptics:
+    :path: "../../node_modules/@capacitor/haptics"
+  CapawesomeCapacitorTorch:
+    :path: "../../node_modules/@capawesome/capacitor-torch"
+
+SPEC CHECKSUMS:
+  Capacitor: c95400d761e376be9da6be5a05f226c0e865cebf
+  CapacitorCommunityNativeAudio: 8660b1c13d0cbd07f23e365dd4e05f23c58e271d
+  CapacitorCommunityVolumeButtons: dd892a2c3d7c49a4536fcd97f6d6037fe96e0646
+  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
+  CapacitorFilesystem: 5b9aec35c0212bd0064e26d278c93e925864f212
+  CapacitorHaptics: 40f83026feeee9cfe36e89e9c98a3baaaf20c450
+  CapawesomeCapacitorTorch: 28598b99799c75f3a9b8f9af633324e16240818f
+
+PODFILE CHECKSUM: 6e5679670f2e4c1f9a4c0eff68926f20815031c1
+
+COCOAPODS: 1.16.2

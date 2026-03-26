@@ -1,0 +1,3227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LuciDreams Web v2026</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* Flutter / Material 3 inspired dark theme */
+    :root {
+      --bg-dark: #0d1117;
+      --bg-gradient-end: #161b22;
+      --surface: #21262d;
+      --surface-elevated: #30363d;
+      --surface-overlay: #484f58;
+      --primary: #58a6ff;
+      --primary-container: rgba(88, 166, 255, 0.16);
+      --primary-accent: #79c0ff;
+      --green-accent: #3fb950;
+      --green-container: rgba(63, 185, 80, 0.16);
+      --red-accent: #f85149;
+      --red-container: rgba(248, 81, 73, 0.16);
+      --orange-accent: #d29922;
+      --orange-container: rgba(210, 153, 34, 0.16);
+      --text: #f0f6fc;
+      --text-muted: #8b949e;
+      --text-tertiary: #6e7681;
+      --outline: rgba(255,255,255,0.12);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+      --radius-full: 9999px;
+      --elevation-1: 0 1px 2px rgba(0,0,0,0.24);
+      --elevation-2: 0 4px 12px rgba(0,0,0,0.32);
+      --elevation-3: 0 8px 24px rgba(0,0,0,0.4);
+      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    body.luci {
+      background: linear-gradient(180deg, var(--bg-dark) 0%, var(--bg-gradient-end) 100%);
+      color: var(--text);
+      font-family: "Segoe UI", "Roboto", -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      text-align: center;
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+    }
+    .luci .app-bar {
+      width: 100%;
+      padding: 20px 20px 18px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--outline);
+      box-shadow: var(--elevation-1);
+      text-align: center;
+      font-size: 1.375rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .luci .content {
+      flex: 1;
+      width: 100%;
+      max-width: 440px;
+      padding: 24px 20px 32px;
+      box-sizing: border-box;
+    }
+    .luci .step-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      background: var(--surface);
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--outline);
+      box-shadow: var(--elevation-2);
+      padding: 28px 24px 32px;
+      min-height: 200px;
+    }
+    .luci .step-content.training-layout {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .luci input[type="text"] {
+      width: 100%;
+      max-width: 280px;
+      padding: 14px 18px;
+      font-size: 1rem;
+      background: var(--surface-elevated);
+      border: 1.5px solid var(--outline);
+      border-radius: var(--radius-md);
+      color: var(--text);
+      text-align: center;
+      box-sizing: border-box;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .luci input[type="text"]:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-container);
+    }
+    .luci input[type="text"]::placeholder {
+      color: var(--text-tertiary);
+    }
+    .luci textarea {
+      font-family: inherit;
+      font-size: 0.9375rem;
+      background: var(--surface-elevated);
+      border: 1.5px solid var(--outline);
+      border-radius: var(--radius-md);
+      color: var(--text);
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .luci textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-container);
+    }
+    .luci .btn {
+      padding: 14px 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      background: var(--primary);
+      color: #0d1117;
+      box-shadow: var(--elevation-1);
+      transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+      min-height: 48px;
+    }
+    .luci .btn:hover { box-shadow: 0 4px 12px rgba(88, 166, 255, 0.35); }
+    .luci .btn:active { transform: scale(0.98); }
+    .luci .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .luci .btn-green {
+      background: var(--green-accent);
+      color: #0d1117;
+    }
+    .luci .btn-green:hover { box-shadow: 0 4px 12px rgba(63, 185, 80, 0.35); }
+    .luci .btn-red {
+      background: var(--red-accent);
+      color: #fff;
+    }
+    .luci .btn-red:hover { box-shadow: 0 4px 12px rgba(248, 81, 73, 0.4); }
+    .luci .btn-orange {
+      background: var(--orange-accent);
+      color: #0d1117;
+    }
+    .luci .btn-orange:hover { box-shadow: 0 4px 12px rgba(210, 153, 34, 0.35); }
+    .luci .text-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      line-height: 1.4;
+      color: var(--text);
+    }
+    .luci .text-body {
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+    .luci .text-center { text-align: center; }
+    .luci .icon-lg {
+      font-size: 3rem;
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+    .luci .divider {
+      width: 100%;
+      height: 1px;
+      background: var(--outline);
+      margin: 8px 0;
+    }
+    .luci .row {
+      display: flex;
+      flex-direction: row;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .luci .volume-display { font-size: 2.5rem; font-weight: 300; letter-spacing: -0.02em; }
+    .luci .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--outline);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .luci .voice-rec-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+      margin-top: 12px;
+      background: transparent !important;
+    }
+    .luci .voice-rec-block .voice-rec-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: transparent !important;
+    }
+    .luci .voice-rec-block .voice-duration {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.95rem;
+      color: var(--red-accent);
+      min-width: 4ch;
+      text-align: center;
+      background: transparent !important;
+    }
+    .luci .voice-rec-block .btn {
+      background: var(--primary) !important;
+      color: #0d1117 !important;
+    }
+    .luci .voice-rec-block .btn-red {
+      background: var(--red-accent) !important;
+      color: #fff !important;
+    }
+    .luci .training-wave {
+      width: 220px;
+      height: 72px;
+      margin: 14px auto 8px auto;
+      border-radius: 14px;
+      background-image: repeating-linear-gradient(
+        90deg,
+        rgba(99, 102, 241, 0.95) 0 8px,
+        rgba(148, 163, 184, 0.12) 8px 14px,
+        rgba(34, 197, 94, 0.9) 14px 22px,
+        rgba(148, 163, 184, 0.12) 22px 28px,
+        rgba(59, 130, 246, 0.95) 28px 36px,
+        rgba(148, 163, 184, 0.12) 36px 42px
+      );
+      animation: trainingPulse 1.2s ease-in-out infinite;
+    }
+    @keyframes trainingPulse {
+      0%, 100% { transform: scaleY(0.86); opacity: 0.7; }
+      50% { transform: scaleY(1.04); opacity: 1; }
+    }
+    .luci .training-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin: 8px 0 6px 0;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .luci .icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid var(--outline);
+      background: transparent;
+      appearance: none;
+      -webkit-appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.12s ease, filter 0.12s ease;
+    }
+    .luci .icon-btn:active {
+      transform: scale(0.96);
+      filter: brightness(0.95);
+    }
+    .luci .icon-btn-white {
+      background: #fff;
+      color: #111827;
+    }
+    .luci .icon-btn-red {
+      background: var(--red-accent);
+      color: #fff;
+      border-color: rgba(239, 68, 68, 0.65);
+    }
+    .luci .pause-glyph {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .luci .pause-glyph .bar {
+      width: 4px;
+      height: 14px;
+      border-radius: 1px;
+      background: #fff;
+      display: inline-block;
+    }
+    .luci .play-glyph {
+      width: 0;
+      height: 0;
+      border-top: 8px solid transparent;
+      border-bottom: 8px solid transparent;
+      border-left: 12px solid #fff;
+      margin-left: 2px;
+      display: inline-block;
+    }
+    .luci .hidden { display: none !important; }
+    .luci .snackbar {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface-elevated);
+      color: var(--text);
+      padding: 14px 24px;
+      border-radius: var(--radius-lg);
+      font-size: 0.9375rem;
+      font-weight: 500;
+      box-shadow: var(--elevation-3);
+      border: 1px solid var(--outline);
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body class="luci">
+  <header class="app-bar">LuciDreams Web v2026</header>
+  <main class="content">
+    <div class="step-content" id="stepContent"><p class="text-body">Loading…</p></div>
+  </main>
+  <div id="snackbar" class="snackbar hidden" aria-live="polite"></div>
+
+  <script src="{{ url_for('static', filename='NoSleep.js') }}"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+  <script src="{{ url_for('static', filename='firebase-config.js') }}"></script>
+  <script>
+(function() {
+  'use strict';
+
+  var LAB_CONFIG_KEY = 'luci_lab_config';
+  var DEFAULT_WAKE_SURVEY_URL = 'https://mit.co1.qualtrics.com/jfe/form/SV_6hVsZKvpEE4NNHM';
+
+  (function applyConfigFromUrl() {
+    var params = new URLSearchParams(window.location.search);
+    var configParam = params.get('config');
+    if (configParam) {
+      try {
+        var decoded = decodeURIComponent(escape(atob(configParam)));
+        var config = JSON.parse(decoded);
+        if (config && config.apiKey) {
+          localStorage.setItem(LAB_CONFIG_KEY, decoded);
+          var url = window.location.pathname + window.location.hash || '';
+          if (window.history && window.history.replaceState) window.history.replaceState({}, '', url);
+        }
+      } catch (e) { console.warn('Invalid config in URL:', e); }
+    }
+  })();
+
+  /** Optional wake survey (Qualtrics etc.): same query param names as Firebase `general` where applicable. */
+  var luciWakeSurveyUrl = (function() {
+    try {
+      var p = new URLSearchParams(window.location.search);
+      var fromUrl = (p.get('survey_url') || p.get('qualtrics_url') || '').trim();
+      return fromUrl || DEFAULT_WAKE_SURVEY_URL;
+    } catch (e) { return DEFAULT_WAKE_SURVEY_URL; }
+  })();
+
+  // --- Capacitor native bridge (flashlight, vibration, native audio) ---
+  window.luciUseNativeTorch = false;
+  window.luciUseNativeHaptics = false;
+  window.luciUseNativeAudio = false;
+  window.luciNativeBeepPreloaded = false;
+  window.luciNativeBeepAssetPath = null;
+  window.luciNativeBeepIsUrl = false;
+  window.luciNativeBeepVariantsReady = false;
+  window.luciNativeBeepVariantsPromise = null;
+  window.luciNativeBeepVariantVolumes = [0.01, 0.02, 0.03, 0.05, 0.06, 0.08, 0.25, 0.5, 0.75, 1.0];
+  window.luciNativeAudioPreloadPromise = null;
+  window.luciNativeLongAssetPromises = {};
+  window.luciNativeLongAssetPaths = {};
+  window.luciNativeLongAssetIsUrl = {};
+  window.luciNativeAudioLastError = '';
+  function getClosestBeepVariantVolume(vol) {
+    var levels = window.luciNativeBeepVariantVolumes || [];
+    if (!levels.length) return Math.max(0, Math.min(1, vol || 0));
+    var target = Math.max(0, Math.min(1, vol || 0));
+    var best = levels[0];
+    var bestDist = Math.abs(target - best);
+    for (var i = 1; i < levels.length; i++) {
+      var d = Math.abs(target - levels[i]);
+      if (d < bestDist) {
+        best = levels[i];
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+  function getBeepVariantAssetId(vol) {
+    var stepped = getClosestBeepVariantVolume(vol);
+    return 'beep_v' + String(Math.round(stepped * 100));
+  }
+  function stopNativeBeepVariants(NA) {
+    (window.luciNativeBeepVariantVolumes || []).forEach(function(v) {
+      NA.stop({ assetId: getBeepVariantAssetId(v) }).catch(function() {});
+    });
+  }
+  function ensureNativeBeepVariantsPreloaded() {
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (!NA) return Promise.resolve(false);
+    if (window.luciNativeBeepVariantsReady) return Promise.resolve(true);
+    if (window.luciNativeBeepVariantsPromise) return window.luciNativeBeepVariantsPromise;
+    var variants = window.luciNativeBeepVariantVolumes || [];
+    window.luciNativeBeepVariantsPromise = Promise.all(variants.map(function(v) {
+      var id = getBeepVariantAssetId(v);
+      var path = 'public/sounds/' + id + '.wav';
+      return NA.unload({ assetId: id }).catch(function() {})
+        .then(function() {
+          return NA.preload({
+            assetId: id,
+            assetPath: path,
+            audioChannelNum: 1,
+            isUrl: false
+          });
+        })
+        .then(function() { return true; })
+        .catch(function() { return false; });
+    })).then(function(results) {
+      window.luciNativeBeepVariantsPromise = null;
+      window.luciNativeBeepVariantsReady = results.every(function(ok) { return !!ok; });
+      return window.luciNativeBeepVariantsReady;
+    }).catch(function() {
+      window.luciNativeBeepVariantsPromise = null;
+      window.luciNativeBeepVariantsReady = false;
+      return false;
+    });
+    return window.luciNativeBeepVariantsPromise;
+  }
+  function ensureNativeBeepPreloaded() {
+    var Cap = window.Capacitor;
+    var NativeAudio = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NativeAudio || typeof NativeAudio.preload !== 'function') {
+      return Promise.resolve(false);
+    }
+    if (window.luciNativeBeepPreloaded) return Promise.resolve(true);
+    if (window.luciNativeAudioPreloadPromise) return window.luciNativeAudioPreloadPromise;
+    var candidates = ['public/sounds/beep.wav'];
+    function markPreloaded(srcLabel, assetPath, isUrl) {
+      window.luciNativeBeepPreloaded = true;
+      window.luciUseNativeAudio = true;
+      window.luciNativeBeepAssetPath = assetPath || null;
+      window.luciNativeBeepIsUrl = !!isUrl;
+      window.luciNativeBeepVariantsReady = false;
+      window.luciNativeAudioLastError = '';
+      console.log('NativeAudio preloaded from:', srcLabel);
+      return true;
+    }
+    function rememberAudioError(stage, err) {
+      var msg = err && (err.message || err.error || err.localizedDescription || String(err)) || 'unknown';
+      window.luciNativeAudioLastError = stage + ': ' + msg;
+      console.warn('NativeAudio error [' + stage + ']:', err);
+    }
+    function arrayBufferToBase64(buffer) {
+      var bytes = new Uint8Array(buffer);
+      var chunkSize = 0x8000;
+      var binary = '';
+      for (var i = 0; i < bytes.length; i += chunkSize) {
+        var chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      return btoa(binary);
+    }
+    function preloadFromWebAssetToCache() {
+      var FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
+      if (!FS || typeof fetch !== 'function') return Promise.resolve(false);
+      var cachePath = 'beep_from_www.wav';
+      var dir = 1; // Directory.Cache
+      return fetch('sounds/beep.wav')
+        .then(function(resp) {
+          if (!resp || !resp.ok) throw new Error('fetch sounds/beep.wav failed');
+          return resp.arrayBuffer();
+        })
+        .then(function(buf) {
+          var b64 = arrayBufferToBase64(buf);
+          return FS.writeFile({ path: cachePath, data: b64, directory: dir });
+        })
+        .then(function() {
+          return FS.getUri({ path: cachePath, directory: dir });
+        })
+        .then(function(res) {
+          var uri = res && res.uri;
+          if (!uri) throw new Error('Filesystem.getUri returned empty uri');
+          if (NativeAudio.unload) {
+            return NativeAudio.unload({ assetId: 'beep' }).catch(function() {}).then(function() { return uri; });
+          }
+          return uri;
+        })
+        .then(function(uri) {
+          return NativeAudio.preload({ assetId: 'beep', assetPath: uri, audioChannelNum: 1, isUrl: true })
+            .then(function() { return uri; });
+        })
+        .then(function(uri) { return markPreloaded('cache:file://beep_from_www.wav', uri, true); })
+        .catch(function(e) {
+          rememberAudioError('cache preload', e);
+          return false;
+        });
+    }
+    function preloadCandidate(idx) {
+      if (idx >= candidates.length) return preloadFromWebAssetToCache();
+      var p = candidates[idx];
+      return NativeAudio.preload({ assetId: 'beep', assetPath: p, audioChannelNum: 1, isUrl: false })
+        .then(function() { return markPreloaded(p, p, false); })
+        .catch(function(e) {
+          rememberAudioError('preload ' + p, e);
+          return preloadCandidate(idx + 1);
+        });
+    }
+    window.luciNativeAudioPreloadPromise = preloadCandidate(0).then(function(ok) {
+      window.luciNativeAudioPreloadPromise = null;
+      return ok;
+    });
+    return window.luciNativeAudioPreloadPromise;
+  }
+  function ensureNativeLongAssetPreloaded(assetId, filename, preloadVolume) {
+    var Cap = window.Capacitor;
+    var NativeAudio = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NativeAudio || typeof NativeAudio.preload !== 'function') {
+      return Promise.resolve(false);
+    }
+    if (window.luciNativeLongAssetPaths[assetId]) return Promise.resolve(true);
+    if (window.luciNativeLongAssetPromises[assetId]) return window.luciNativeLongAssetPromises[assetId];
+    var candidates = ['public/sounds/' + filename];
+    function rememberAudioError(stage, err) {
+      var msg = err && (err.message || err.error || err.localizedDescription || String(err)) || 'unknown';
+      window.luciNativeAudioLastError = stage + ': ' + msg;
+      console.warn('NativeAudio error [' + stage + ']:', err);
+    }
+    function markPreloaded(path, isUrl) {
+      window.luciNativeLongAssetPaths[assetId] = path;
+      window.luciNativeLongAssetIsUrl[assetId] = !!isUrl;
+      return true;
+    }
+    function arrayBufferToBase64(buffer) {
+      var bytes = new Uint8Array(buffer);
+      var chunkSize = 0x8000;
+      var binary = '';
+      for (var i = 0; i < bytes.length; i += chunkSize) {
+        var chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      return btoa(binary);
+    }
+    var fixedVol = (typeof preloadVolume === 'number') ? Math.max(0, Math.min(1, preloadVolume)) : null;
+    function preloadFromWebAssetToCache() {
+      var FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
+      if (!FS || typeof fetch !== 'function') return Promise.resolve(false);
+      var ext = '.bin';
+      var dot = filename.lastIndexOf('.');
+      if (dot > -1) ext = filename.slice(dot);
+      var cachePath = assetId + '_from_www' + ext;
+      var dir = 1; // Directory.Cache
+      return fetch('sounds/' + filename)
+        .then(function(resp) {
+          if (!resp || !resp.ok) throw new Error('fetch sounds/' + filename + ' failed');
+          return resp.arrayBuffer();
+        })
+        .then(function(buf) {
+          var b64 = arrayBufferToBase64(buf);
+          return FS.writeFile({ path: cachePath, data: b64, directory: dir });
+        })
+        .then(function() { return FS.getUri({ path: cachePath, directory: dir }); })
+        .then(function(res) {
+          var uri = res && res.uri;
+          if (!uri) throw new Error('Filesystem.getUri returned empty uri');
+          return NativeAudio.unload({ assetId: assetId }).catch(function() {}).then(function() { return uri; });
+        })
+        .then(function(uri) {
+          var opts = { assetId: assetId, assetPath: uri, audioChannelNum: 1, isUrl: true };
+          if (fixedVol != null) opts.volume = fixedVol;
+          return NativeAudio.preload(opts).then(function() { return uri; });
+        })
+        .then(function(uri) { return markPreloaded(uri, true); })
+        .catch(function(e) {
+          rememberAudioError('cache preload ' + filename, e);
+          return false;
+        });
+    }
+    function preloadCandidate(idx) {
+      if (idx >= candidates.length) return preloadFromWebAssetToCache();
+      var p = candidates[idx];
+      return NativeAudio.unload({ assetId: assetId }).catch(function() {})
+        .then(function() {
+          var opts = { assetId: assetId, assetPath: p, audioChannelNum: 1, isUrl: false };
+          if (fixedVol != null) opts.volume = fixedVol;
+          return NativeAudio.preload(opts);
+        })
+        .then(function() { return markPreloaded(p, false); })
+        .catch(function(e) {
+          rememberAudioError('preload ' + p, e);
+          return preloadCandidate(idx + 1);
+        });
+    }
+    window.luciNativeLongAssetPromises[assetId] = preloadCandidate(0).then(function(ok) {
+      window.luciNativeLongAssetPromises[assetId] = null;
+      return ok;
+    });
+    return window.luciNativeLongAssetPromises[assetId];
+  }
+  (function initCapacitorBridge() {
+    var Cap = window.Capacitor;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return;
+    var Plugins = Cap.Plugins || {};
+    var Torch = Plugins.Torch;
+    var Haptics = Plugins.Haptics;
+    var NativeAudio = Plugins.NativeAudio;
+    if (Torch && typeof Torch.enable === 'function') {
+      Torch.isAvailable && Torch.isAvailable().then(function(r) { if (r && r.available) window.luciUseNativeTorch = true; }).catch(function() {});
+    }
+    if (Haptics && typeof Haptics.vibrate === 'function') window.luciUseNativeHaptics = true;
+    if (NativeAudio && typeof NativeAudio.preload === 'function') ensureNativeBeepPreloaded();
+  })();
+
+  function getEffectiveFirebaseConfig() {
+    if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
+      return window.FIREBASE_CONFIG;
+    }
+    try {
+      var stored = localStorage.getItem(LAB_CONFIG_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return null;
+  }
+
+  var db = null;
+  try {
+    var effectiveConfig = getEffectiveFirebaseConfig();
+    if (effectiveConfig && typeof firebase !== 'undefined') {
+      firebase.initializeApp(effectiveConfig);
+      db = firebase.firestore();
+    }
+  } catch (e) { console.warn('Firebase init:', e); }
+
+  // --- EXPERIMENT PARAMETERS (from Flutter) ---
+  const BUFFER_SIZE = 800;
+  const SIG_MOTION = 0.1;
+  const REM_GATE_SECONDS = 14400;   // 4 hours before REM detection runs
+  const REM_SMOOTH_WINDOW_SEC = 180; // Rolling mean over last 180 seconds (updated every second)
+  const REM_STILLNESS_PERCENT_OF_SERIES_MEAN = 0.8; // Still if current rolling mean is lower than >=80% of first-4h rolling values
+  // REM Episode Manager (refined)
+  const POTENTIAL_REM_STILLNESS_SEC = 0;      // REM entry is based on current rolling-window stillness only (no extra stillness delay)
+  const CUE_DELIVERY_STILLNESS_SEC = 0;       // No extra wait after stillness gate
+  /** Hard cap on stimulation trains for the entire night (all REM episodes combined). Not per REM period. */
+  const NIGHT_MAX_TRAINS = 10;
+  const REM_EPISODE_MAX_TRAINS = 5;           // Per-REM-episode cap (night cap still enforced separately)
+  const REFRACTORY_PERIOD_SEC = 300;          // 5 min between trains
+  const AROUSAL_CHECK_WINDOW_SEC = 5;          // Movement within 5s after induction cue (raw motion; for arousal only)
+  const MOVEMENT_DURATION_FOR_AROUSAL = 2;    // Require 2s movement for arousal (kept: responsive to cue reaction)
+  const USER_MIN_VOLUME_CEILING_DELTA = 0.20;
+  const CALIBRATION_VOLUME_STEP = 1 / 16; // iOS hardware volume increments are typically 16 steps
+  // --- TEMP TEST HARNESS (delete this block when done) ---
+  const ENABLE_FAKE_REM_TEST = false; // Disabled for normal sleep runs.
+  const FAKE_REM_TRIGGER_AFTER_SEC = 60; // Trigger fake REM after 1 minute
+  // --- END TEMP TEST HARNESS ---
+  // One train = 2min disruptive + LD induction (until arousal)
+  const DISRUPTIVE_PERIOD_SEC = 120;
+  const DISRUPTIVE_SOUND_VOLUME = 0.8;           // disruptive cue fixed at 80%
+  const DISRUPTIVE_SOUND_DURATION_MS = 1500;    // disruptive beep lasts 1.5 seconds
+  const DISRUPTIVE_SECOND_CUE_OFFSET_MS = 60000; // disruptive beep/vibration second cue at +60s
+  const DISRUPTIVE_WAVE_VOLUME = 0.15;            // theta/gamma disruptive wave volume fixed at 15%
+  const DISRUPTIVE_THETA_ASSET = 'theta.mp3';
+  const DISRUPTIVE_GAMMA_ASSET = 'gamma.mp3';
+  const FIXED_BEEP_80_ASSET_ID = 'beep_v80';
+  const FIXED_BEEP_75_ASSET_ID = 'beep_v75';
+  const FIXED_BEEP_100_ASSET_ID = 'beep_v100';
+  const DISRUPTIVE_LIGHT_OFFSET_MS = 90000;   // 1m30 after train start
+  const DISRUPTIVE_LIGHT_DURATION_MS = 30000; // 30s at 100%
+  const DISRUPTIVE_VIBRATION_BURSTS = 3;      // 3 bursts each disruptive vibration event
+  const DISRUPTIVE_VIBRATION_MS = 500;       // per burst
+  const DISRUPTIVE_VIBRATION_GAP_MS = 1000;   // gap between bursts
+  const LD_INDUCTION_START_VOLUME = 0.01;         // induction starts at 1%
+  const INDUCTION_VOLUME_LEVELS = [0.01, 0.02, 0.03, 0.05, 0.06, 0.08, 0.25, 0.5, 0.75, 1.0];
+  const LD_T0_BEEP_DURATION_MS = 200;
+  const LD_T2_BEEP_DURATION_MS = 200;
+  const DEFAULT_AROUSAL_SOUND = 0.5;          // fallback for legacy play helpers
+  const T0_VOLUME_BOOST = 0.2;                // legacy LD T0 boost
+  const DEFAULT_AROUSAL_VIBRATION_MS = 250;   // legacy triggerVibration default
+  // App-wide cue
+  const DEFAULT_CUE_KEYWORD = 'Bip';
+  const DEFAULT_CUE_SOUND_TYPE = 'keyword';
+  const DEFAULT_BEEP_FREQUENCY_HZ = 800;
+  const DEFAULT_BEEP_DURATION_MS = 150;
+  // 8-night rotating conditions:
+  // 0=Control, 1=Sound+Bip, 2=Vibration+Bip, 3=Light+Bip, 4=Voice, 5=Beep,
+  // 6=Theta(8Hz)+Bip, 7=Gamma(30Hz)+Bip
+  const CONDITION_POOL = [0, 1, 2, 3, 4, 5, 6, 7];
+  const TRAINING_DURATION_MS = 10 * 60 * 1000;
+  const TRAINING_CUE_INTERVAL_MS = 1000;
+  const TRAINING_INTRO_DELAY_MS = 2000;
+  const TRAINING_CUE_VOLUME = 0.8;
+  const TRAINING_GUIDANCE_COUNT = 4;
+  const TRAINING_INTRO_ASSET = 'sounds/training_intro.mp3';
+  const TRAINING_GUIDANCE_ASSET = 'sounds/training_guidance.mp3';
+  const CONDITION_LABELS = {
+    0: 'Control',
+    1: 'Sound+Bip',
+    2: 'Vibration+Bip',
+    3: 'Light+Bip',
+    4: 'Voice',
+    5: 'Beep',
+    6: 'Theta(8Hz)+Bip',
+    7: 'Gamma(30Hz)+Bip'
+  };
+  const VOICE_RECORD_MIN_MS = 2000;
+  const VOICE_RECORD_MAX_MS = 4000;
+  const LUCI_IDB_NAME = 'luci_db';
+  const LUCI_IDB_STORE = 'voice_recordings';
+
+  let state = {
+    pid: '',
+    keyword: 'Bip',
+    soundType: 'keyword',
+    beepFrequencyHz: 800,
+    beepDurationMs: 150,
+    intervalSeconds: 10,
+    baseStartVolume: 0.01,
+    appStep: 0,
+    epochs: 0,
+    soundRunning: false,
+    totalStimCount: 0,
+    thresholdVolume: 0,
+    finalSleepVolume: 0,
+    motionHistory: [],
+    summedMotion: [],
+    totalHistory: [],
+    soundLog: [],
+    motionSamplesForBackend: [],
+    rawSensorSamples: [],
+    remEpisodes: [],
+    smoothedMotionSeries: [],
+    smoothedMotionCurrent: null,
+    motion80pctCutoffSeries: [],
+    motion80pctCutoffCurrent: null,
+    remSmoothWindowValues: [],
+    remSmoothWindowSum: 0,
+    baselineMotionSum: 0,
+    secondsRecorded: 0,
+    consecutiveRemSeconds: 0,
+    inRemEpisode: false,
+    remEpisodeStartSeconds: 0,
+    remEpisodeStartTime: null,
+    currentRemEpisodeEntryThreshold: null,
+    lastCueEpoch: 0,
+    oldX: 0, oldY: 0, oldZ: 0,
+    motionThisSecond: 0,
+    lastMagnitude: 9.81,
+    oldValuesSet: false,
+    lastRawX: 0, lastRawY: 0, lastRawZ: 0,
+    accelHandler: null,
+    motionSampleTimer: null,
+    autoSaveTimer: null,
+    soundHandle: null,
+    disruptiveWaveAssetId: null,
+    noSleep: null,
+    sleepStartTime: null,
+    timerInterval: null,
+    lastSession: null,
+    consecutive_seconds_above_threshold: 0,
+    userMinVolume: null,
+    baselineSliderVolume: 0.1,
+    alarmTime: '',
+    tonight_condition: null,
+    hasVoiceRecording: false,
+    // Arousal threshold (sound 0-1) from LD induction, persisted across nights
+    arousal_threshold: null,
+    // Train state: one train = 2min disruptive + induction until arousal
+    trainStartEpoch: null,
+    trainPhase: null,           // 'disruptive' | 'induction'
+    disruptiveTimeouts: [],    // timeouts to clear when train ends
+    inductionVolume: 0.1,
+    inductionCap: 1,           // induction climbs until arousal or 100%
+    lastInductionPlayEpoch: null,
+    currentEpisodeTrains: [],  // { disruptive: {}, induction: { cues: [], arousal_threshold } }
+    fakeRemTestActive: false,
+    fakeRemTestTimeoutId: null,
+    fakeTestSequenceActive: false,
+    fakeTestConditions: [1, 2, 3, 4, 5, 6, 7],
+    fakeTestConditionIndex: 0,
+    trainingActive: false,
+    trainingComplete: false,
+    trainingStartMs: null,
+    trainingRemainingSec: Math.floor(TRAINING_DURATION_MS / 1000),
+    trainingCueCount: 0,
+    trainingIntroDone: false,
+    trainingIntroStarted: false,
+    trainingCueInFlight: false,
+    trainingNextCueAtMs: null,
+    trainingPaused: false,
+    trainingPauseStartedAtMs: null,
+    trainingPausedAccumMs: 0,
+    trainingTickIntervalId: null,
+    trainingCurrentNativeAssetId: null,
+    trainingCurrentNativeListener: null,
+    trainingCurrentNativeTimeoutId: null,
+    trainingCurrentHtmlAudio: null,
+    trainingCueWatchdogTimeoutId: null,
+    voiceVariantCachePid: null,
+    voiceVariantBlobs: null
+  };
+
+  if (!db) state.appStep = -1;
+
+  function getConditionStateKey(pid) { return 'luci_condition_state_' + (pid || 'default'); }
+  function shuffle(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function ensureConditionForTonight(pid) {
+    var key = getConditionStateKey(pid);
+    var raw = null;
+    try { raw = localStorage.getItem(key); } catch (e) {}
+    var cs = raw ? JSON.parse(raw) : null;
+    function poolIsOutdated(stateObj) {
+      if (!stateObj || !Array.isArray(stateObj.current_cycle_pool) || !Array.isArray(stateObj.spent_conditions)) return true;
+      var all = stateObj.current_cycle_pool.concat(stateObj.spent_conditions);
+      var seen = {};
+      for (var i = 0; i < all.length; i++) seen[all[i]] = true;
+      var keys = Object.keys(seen).map(function(k) { return Number(k); }).sort(function(a, b) { return a - b; });
+      var expected = CONDITION_POOL.slice().sort(function(a, b) { return a - b; });
+      if (keys.length !== expected.length) return true;
+      for (var j = 0; j < expected.length; j++) {
+        if (keys[j] !== expected[j]) return true;
+      }
+      return false;
+    }
+    var tonight;
+    if (poolIsOutdated(cs)) {
+      cs = { current_cycle_pool: CONDITION_POOL.slice(), spent_conditions: [] };
+    }
+    if (!cs.current_cycle_pool || cs.current_cycle_pool.length === 0) {
+      cs.current_cycle_pool = CONDITION_POOL.slice();
+      cs.spent_conditions = [];
+    }
+    var pickIdx = Math.floor(Math.random() * cs.current_cycle_pool.length);
+    tonight = cs.current_cycle_pool[pickIdx];
+    cs.current_cycle_pool.splice(pickIdx, 1);
+    cs.spent_conditions.push(tonight);
+    try { localStorage.setItem(key, JSON.stringify(cs)); } catch (e) {}
+    state.tonight_condition = tonight;
+  }
+
+  function cancelScheduledCue() {
+    if (state.scheduledCueTimeoutId) {
+      clearTimeout(state.scheduledCueTimeoutId);
+      state.scheduledCueTimeoutId = null;
+    }
+    render();
+  }
+
+  function clearDisruptiveTimeouts() {
+    (state.disruptiveTimeouts || []).forEach(function(id) { clearTimeout(id); });
+    state.disruptiveTimeouts = [];
+  }
+
+  var nextTrainTimeoutId = null;
+  // --- TEMP TEST HARNESS (delete these helpers when done) ---
+  function isFakeConditionSweepModeActive() {
+    return !!(ENABLE_FAKE_REM_TEST && state.fakeRemTestActive && state.fakeTestSequenceActive);
+  }
+  // --- END TEMP TEST HARNESS ---
+  function totalNightTrainCount() {
+    var finished = (state.remEpisodes || []).reduce(function(sum, ep) {
+      return sum + (((ep && ep.trains) && ep.trains.length) || 0);
+    }, 0);
+    var current = state.inRemEpisode ? ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) : 0;
+    return finished + current;
+  }
+  function hasReachedNightTrainCap() {
+    if (isFakeConditionSweepModeActive()) return false;
+    return totalNightTrainCount() >= NIGHT_MAX_TRAINS;
+  }
+  function hasReachedEpisodeTrainCap() {
+    if (isFakeConditionSweepModeActive()) return false;
+    return ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) >= REM_EPISODE_MAX_TRAINS;
+  }
+  // --- TEMP TEST HARNESS (delete this function when done) ---
+  function setupTemporaryFakeRemForTesting() {
+    if (!ENABLE_FAKE_REM_TEST) return;
+    if (state.fakeRemTestTimeoutId) {
+      clearTimeout(state.fakeRemTestTimeoutId);
+      state.fakeRemTestTimeoutId = null;
+    }
+    state.fakeRemTestActive = false;
+    state.fakeRemTestTimeoutId = setTimeout(function() {
+      state.fakeRemTestTimeoutId = null;
+      if (state.appStep !== 5 || state.inRemEpisode) return;
+      state.fakeRemTestActive = true;
+      state.fakeTestSequenceActive = true;
+      state.fakeTestConditionIndex = 0;
+      state.fakeTestConditions = [1, 2, 3, 4, 5, 6, 7];
+      state.tonight_condition = state.fakeTestConditions[state.fakeTestConditionIndex];
+      state.inRemEpisode = true;
+      state.remEpisodeStartSeconds = state.secondsRecorded;
+      state.remEpisodeStartTime = new Date().toISOString();
+      state.currentRemEpisodeEntryThreshold = null;
+      state.currentEpisodeTrains = [];
+      state.lastCueEpoch = 0;
+      if (state.tonight_condition !== 0 && !hasReachedNightTrainCap() && !hasReachedEpisodeTrainCap()) {
+        startTrain();
+      }
+      showSnackbar('TEMP TEST: fake REM started (2 min).');
+      render();
+    }, FAKE_REM_TRIGGER_AFTER_SEC * 1000);
+  }
+  // --- END TEMP TEST HARNESS ---
+
+  function scheduleNextTrain() {
+    if (nextTrainTimeoutId) clearTimeout(nextTrainTimeoutId);
+    nextTrainTimeoutId = null;
+    var runNext = function() {
+      if (state.appStep !== 5 || !state.inRemEpisode || state.trainPhase !== null) return;
+      if (state.tonight_condition === 0) return;
+      if (hasReachedNightTrainCap()) return;
+      if (hasReachedEpisodeTrainCap()) return;
+      startTrain();
+      render();
+    };
+    // Control (0): no stimulation in disruptive or induction, so no refractory
+    if (state.tonight_condition === 0) {
+      runNext();
+      return;
+    }
+    nextTrainTimeoutId = setTimeout(function() {
+      nextTrainTimeoutId = null;
+      runNext();
+    }, REFRACTORY_PERIOD_SEC * 1000);
+  }
+
+  function stopDisruptiveWaveNoise() {
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    var id = state.disruptiveWaveAssetId;
+    if (!id || !NA) {
+      state.disruptiveWaveAssetId = null;
+      return;
+    }
+    NA.stop({ assetId: id }).catch(function() {});
+    state.disruptiveWaveAssetId = null;
+  }
+  function startDisruptiveWaveNoise(waveHz, volume, trainRecord) {
+    var cfg = waveHz === 8
+      ? { assetId: 'theta_noise_15', filename: DISRUPTIVE_THETA_ASSET }
+      : { assetId: 'gamma_noise_15', filename: DISRUPTIVE_GAMMA_ASSET };
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    trainRecord.disruptive.took_place = true;
+    trainRecord.disruptive.params = {
+      type: 'continuous_noise',
+      wave_hz: waveHz,
+      asset: cfg.filename,
+      volume: volume
+    };
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
+      luciNativeError('audio', 'not_native');
+      return;
+    }
+    ensureNativeLongAssetPreloaded(cfg.assetId, cfg.filename, volume).then(function(ok) {
+      if (!ok || !window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.NativeAudio) {
+        luciNativeError('audio', 'unavailable');
+        return;
+      }
+      stopDisruptiveWaveNoise();
+      state.disruptiveWaveAssetId = cfg.assetId;
+      state.soundRunning = true;
+      NA.stop({ assetId: cfg.assetId }).catch(function() {})
+        .then(function() { return NA.setVolume({ assetId: cfg.assetId, volume: Math.max(0, Math.min(1, volume)) }); }).catch(function() {})
+        .then(function() { return NA.loop({ assetId: cfg.assetId }); })
+        .then(function() { render(); })
+        .catch(function(e) {
+          window.luciNativeAudioLastError = 'loop ' + cfg.filename + ': ' + (e && (e.message || e.error || String(e)) || 'unknown');
+          stopDisruptiveWaveNoise();
+          state.soundRunning = false;
+          luciNativeError('audio', 'unavailable');
+          render();
+        });
+    });
+  }
+
+  function startTrain() {
+    state.trainStartEpoch = state.secondsRecorded;
+    state.trainPhase = 'disruptive';
+    state.lastInductionPlayEpoch = null;
+    var c = state.tonight_condition;
+    var trainRecord = {
+      disruptive: {
+        type: c,
+        start_epoch_sec: state.secondsRecorded,
+        device_time_start: new Date().toISOString(),
+        took_place: false,
+        params: {}
+      },
+      induction: { cues: [], arousal_threshold: null }
+    };
+    state.currentEpisodeTrains.push(trainRecord);
+    clearDisruptiveTimeouts();
+    var endMs = DISRUPTIVE_PERIOD_SEC * 1000;
+    var endDisruptive = function() {
+      if (c === 6 || c === 7) stopSound();
+      state.trainPhase = 'induction';
+      state.inductionVolume = getInductionStartVolume();
+      // Induction cues always ramp from 10% by +10% until arousal or 100%.
+      state.inductionCap = 1;
+      state.lastInductionPlayEpoch = null;
+      if (c === 0) {
+        endTrain(false);
+        return;
+      }
+      playInductionCue();
+      render();
+    };
+    state.disruptiveTimeouts.push(setTimeout(endDisruptive, endMs));
+    if (c === 1) {
+      var beepStarts = [0, DISRUPTIVE_SECOND_CUE_OFFSET_MS];
+      trainRecord.disruptive.took_place = true;
+      trainRecord.disruptive.params = {
+        volume: 0.75,
+        duration_ms: DISRUPTIVE_SOUND_DURATION_MS,
+        starts_after_train_start_ms: beepStarts.slice()
+      };
+      beepStarts.forEach(function(startMs) {
+        state.disruptiveTimeouts.push(setTimeout(function() {
+          state.soundRunning = true;
+          playFixedBeep75(DISRUPTIVE_SOUND_DURATION_MS, function() { state.soundRunning = false; render(); });
+        }, startMs));
+      });
+    } else if (c === 2) {
+      var vibMs = DISRUPTIVE_VIBRATION_MS;
+      var gap = DISRUPTIVE_VIBRATION_GAP_MS;
+      var hasVibrate = !!(navigator.vibrate) || !!(window.luciUseNativeHaptics);
+      var vibrationStarts = [0, DISRUPTIVE_SECOND_CUE_OFFSET_MS];
+      trainRecord.disruptive.params = {
+        vibration_supported: hasVibrate,
+        bursts_per_event: DISRUPTIVE_VIBRATION_BURSTS,
+        burst_duration_ms: vibMs,
+        starts_after_train_start_ms: vibrationStarts.slice()
+      };
+      vibrationStarts.forEach(function(eventStartMs) {
+        for (var i = 0; i < DISRUPTIVE_VIBRATION_BURSTS; i++) {
+          (function(ii) {
+            var burstStart = eventStartMs + ii * (vibMs + gap);
+            state.disruptiveTimeouts.push(setTimeout(function() {
+              if (hasVibrate) {
+                trainRecord.disruptive.took_place = true;
+                luciVibrate(vibMs);
+              }
+            }, burstStart));
+          })(i);
+        }
+      });
+    } else if (c === 3) {
+      state.disruptiveTimeouts.push(setTimeout(function() {
+        trainRecord.disruptive.took_place = true;
+        trainRecord.disruptive.params = { offset_ms: DISRUPTIVE_LIGHT_OFFSET_MS, intensity: 1 };
+        triggerLight(DISRUPTIVE_LIGHT_DURATION_MS, function(outcome) {
+          trainRecord.disruptive.params.light_method = outcome.method;
+          if (outcome.error) trainRecord.disruptive.params.light_error = outcome.error;
+        });
+      }, DISRUPTIVE_LIGHT_OFFSET_MS));
+    } else if (c === 6) {
+      // Theta (8Hz) disruptive wave from REM detection until induction starts.
+      startDisruptiveWaveNoise(8, DISRUPTIVE_WAVE_VOLUME, trainRecord);
+    } else if (c === 7) {
+      // Gamma (30Hz) disruptive wave from REM detection until induction starts.
+      startDisruptiveWaveNoise(30, DISRUPTIVE_WAVE_VOLUME, trainRecord);
+    }
+    render();
+  }
+
+  function endTrain(arousalReached) {
+    var train = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
+    if (train && train.disruptive) {
+      train.end_epoch_sec = state.secondsRecorded;
+      train.duration_sec = state.secondsRecorded - train.disruptive.start_epoch_sec;
+    }
+    state.trainPhase = null;
+    state.trainStartEpoch = null;
+    state.lastInductionPlayEpoch = null;
+    clearDisruptiveTimeouts();
+    state.lastCueEpoch = state.secondsRecorded;
+    if (state.soundRunning) stopSound();
+    cancelScheduledCue();
+    if (isFakeConditionSweepModeActive()) {
+      if (state.fakeTestConditionIndex < state.fakeTestConditions.length - 1) {
+        state.fakeTestConditionIndex++;
+        state.tonight_condition = state.fakeTestConditions[state.fakeTestConditionIndex];
+        state.inductionCap = 1;
+        if (state.appStep === 5 && state.inRemEpisode && state.trainPhase === null) startTrain();
+      } else {
+        state.fakeTestSequenceActive = false;
+        state.fakeRemTestActive = false;
+        state.inRemEpisode = false;
+        showSnackbar('TEMP TEST: condition sweep completed.');
+      }
+      render();
+      return;
+    }
+    if (arousalReached) {
+      scheduleNextTrain(); // 5 min no stimulation, then next train
+    } else {
+      // Cap reached without arousal: start next train directly (2 min disruptive then induction from calibrated start volume)
+      if (nextTrainTimeoutId) { clearTimeout(nextTrainTimeoutId); nextTrainTimeoutId = null; }
+      if (state.appStep === 5 && state.inRemEpisode && state.tonight_condition !== 0 && !hasReachedNightTrainCap() && !hasReachedEpisodeTrainCap()) startTrain();
+    }
+    render();
+  }
+
+  function playOwnVoiceViaHtmlAudio(blob, volume, onEnded) {
+    if (!blob) { if (onEnded) onEnded(); return; }
+    var url = '';
+    try {
+      url = URL.createObjectURL(blob);
+      var audio = new Audio(url);
+      audio.volume = Math.max(0, Math.min(1, volume));
+      var finished = false;
+      var timeoutId = null;
+      function done() {
+        if (finished) return;
+        finished = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        try { audio.pause(); } catch (e) {}
+        if (url) URL.revokeObjectURL(url);
+        if (typeof onEnded === 'function') onEnded();
+      }
+      audio.onended = done;
+      audio.onerror = done;
+      timeoutId = setTimeout(done, 15000);
+      audio.play().catch(function() { done(); });
+    } catch (e) {
+      if (url) URL.revokeObjectURL(url);
+      if (typeof onEnded === 'function') onEnded();
+    }
+  }
+
+  /** Play own-voice blob via native audio when in Capacitor (write temp file, preload, play, cleanup). */
+  function playOwnVoiceViaNative(blob, volume, onEnded) {
+    var Cap = window.Capacitor;
+    var FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (!FS || !NA) { if (onEnded) onEnded(); return; }
+    var ext = '.webm';
+    if (blob && blob.type) {
+      if (blob.type.indexOf('wav') !== -1) ext = '.wav';
+      else if (blob.type.indexOf('mp4') !== -1 || blob.type.indexOf('m4a') !== -1 || blob.type.indexOf('aac') !== -1) ext = '.m4a';
+    }
+    var path = 'voice_temp' + ext;
+    var dir = 1; // Directory.Cache (1) in Capacitor Filesystem
+    var assetId = 'own_voice';
+    function done() {
+      NA.unload({ assetId: assetId }).catch(function() {});
+      FS.deleteFile({ path: path, directory: dir }).catch(function() {});
+      if (typeof onEnded === 'function') onEnded();
+    }
+    NA.unload({ assetId: assetId }).catch(function() {});
+    var fr = new FileReader();
+    fr.onload = function() {
+      var data = fr.result;
+      if (typeof data === 'string' && data.indexOf('base64,') !== -1) data = data.split('base64,')[1] || data;
+      FS.writeFile({ path: path, data: data, directory: dir }).then(function() {
+        return FS.getUri({ path: path, directory: dir });
+      }).then(function(res) {
+        var uri = res && res.uri;
+        if (!uri) { done(); return; }
+        return NA.preload({ assetId: assetId, assetPath: uri, isUrl: true }).then(function() {
+          NA.setVolume({ assetId: assetId, volume: Math.max(0, Math.min(1, volume)) }).catch(function() {});
+          var finished = false;
+          var timeoutId = null;
+          function finish() {
+            if (finished) return;
+            finished = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            if (listenerHandle && listenerHandle.remove) listenerHandle.remove().catch(function() {});
+            done();
+          }
+          var handleComplete = function(ev) {
+            if (ev && ev.assetId === assetId) finish();
+          };
+          var listenerHandle = null;
+          var timeoutMs = 15000; // fallback if complete event never fires
+          timeoutId = setTimeout(finish, timeoutMs);
+          NA.addListener('complete', handleComplete).then(function(h) {
+            listenerHandle = h;
+            return NA.play({ assetId: assetId });
+          }).then(function() { render(); }).catch(function() { finish(); });
+        });
+      }).catch(function() { playOwnVoiceViaHtmlAudio(blob, volume, done); });
+    };
+    fr.onerror = function() { playOwnVoiceViaHtmlAudio(blob, volume, done); };
+    fr.readAsDataURL(blob);
+  }
+  function getVoiceStepFromVolume(vol) {
+    var target = Math.max(0, Math.min(1, vol || 0));
+    var levels = INDUCTION_VOLUME_LEVELS || [0.1, 1.0];
+    var best = levels[0];
+    var bestDist = Math.abs(target - best);
+    for (var i = 1; i < levels.length; i++) {
+      var d = Math.abs(target - levels[i]);
+      if (d < bestDist) {
+        best = levels[i];
+        bestDist = d;
+      }
+    }
+    return Math.round(best * 100);
+  }
+  function ensureVoiceVariantBlobs(pid, sourceBlob, cb) {
+    if (!sourceBlob) { cb(null); return; }
+    if (state.voiceVariantCachePid === pid && state.voiceVariantBlobs) {
+      cb(state.voiceVariantBlobs);
+      return;
+    }
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx || !sourceBlob.arrayBuffer) { cb(null); return; }
+    sourceBlob.arrayBuffer().then(function(ab) {
+      var ctx = new AudioCtx();
+      return ctx.decodeAudioData(ab.slice(0)).then(function(audioBuf) {
+        var ch = audioBuf.numberOfChannels || 1;
+        var len = audioBuf.length || 0;
+        var rate = audioBuf.sampleRate || 44100;
+        if (!len) { try { ctx.close(); } catch (e) {} cb(null); return; }
+        var channels = [];
+        for (var c = 0; c < ch; c++) channels.push(audioBuf.getChannelData(c));
+        function encodeWavWithGain(gain) {
+          var bytesPerSample = 2;
+          var blockAlign = ch * bytesPerSample;
+          var dataSize = len * blockAlign;
+          var buffer = new ArrayBuffer(44 + dataSize);
+          var view = new DataView(buffer);
+          function writeStr(off, s) { for (var i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); }
+          writeStr(0, 'RIFF');
+          view.setUint32(4, 36 + dataSize, true);
+          writeStr(8, 'WAVE');
+          writeStr(12, 'fmt ');
+          view.setUint32(16, 16, true);
+          view.setUint16(20, 1, true);
+          view.setUint16(22, ch, true);
+          view.setUint32(24, rate, true);
+          view.setUint32(28, rate * blockAlign, true);
+          view.setUint16(32, blockAlign, true);
+          view.setUint16(34, 16, true);
+          writeStr(36, 'data');
+          view.setUint32(40, dataSize, true);
+          var off = 44;
+          for (var i = 0; i < len; i++) {
+            for (var cc = 0; cc < ch; cc++) {
+              var sample = channels[cc][i] * gain;
+              if (sample > 1) sample = 1;
+              if (sample < -1) sample = -1;
+              view.setInt16(off, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+              off += 2;
+            }
+          }
+          return new Blob([buffer], { type: 'audio/wav' });
+        }
+        var variants = {};
+        (INDUCTION_VOLUME_LEVELS || []).forEach(function(level) {
+          var step = Math.round((level || 0) * 100);
+          if (step >= 1 && step <= 100) variants[step] = encodeWavWithGain(step / 100);
+        });
+        state.voiceVariantCachePid = pid;
+        state.voiceVariantBlobs = variants;
+        try { ctx.close(); } catch (e) {}
+        cb(variants);
+      }).catch(function() {
+        try { ctx.close(); } catch (e) {}
+        cb(null);
+      });
+    }).catch(function() { cb(null); });
+  }
+  function playOwnVoiceAtStep(step, onEnded) {
+    getVoiceBlob(state.pid, function(blob) {
+      if (!blob) { if (typeof onEnded === 'function') onEnded(); return; }
+      ensureVoiceVariantBlobs(state.pid, blob, function(variants) {
+        var stepInt = Math.max(1, Math.min(100, parseInt(step, 10) || 80));
+        if (variants && !variants[stepInt]) {
+          var keys = Object.keys(variants).map(function(k) { return parseInt(k, 10); }).filter(function(n) { return !isNaN(n); });
+          if (keys.length) {
+            var best = keys[0];
+            var bestDist = Math.abs(stepInt - best);
+            for (var i = 1; i < keys.length; i++) {
+              var d = Math.abs(stepInt - keys[i]);
+              if (d < bestDist) { best = keys[i]; bestDist = d; }
+            }
+            stepInt = best;
+          }
+        }
+        var chosen = (variants && variants[stepInt]) ? variants[stepInt] : blob;
+        var hasNative = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeAudio && window.Capacitor.Plugins.Filesystem;
+        if (hasNative) {
+          playOwnVoiceViaNative(chosen, 1, onEnded);
+        } else {
+          playOwnVoiceViaHtmlAudio(chosen, 1, onEnded);
+        }
+      });
+    });
+  }
+
+  function playInductionCue() {
+    var vol = Math.min(state.inductionCap, state.inductionVolume);
+    var c = state.tonight_condition;
+    var train = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
+    if (!train) return;
+    var cueRecord = {
+      volume: vol,
+      epoch_sec: state.secondsRecorded,
+      took_place: true,
+      arousal_detected: false
+    };
+    train.induction.cues.push(cueRecord);
+    state.lastInductionPlayEpoch = state.secondsRecorded;
+    state.soundRunning = true;
+    if (c === 4) {
+      var step = getVoiceStepFromVolume(vol);
+      if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'own_voice', type: 'T2', level: vol, info: 'custom recording step ' + String(step) });
+      playOwnVoiceAtStep(step, function() { state.soundRunning = false; render(); });
+    } else if (c === 5) {
+      playBeep(vol, state.beepFrequencyHz, LD_T2_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
+    } else {
+      playBeep(vol, state.beepFrequencyHz, LD_T0_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
+    }
+    render();
+  }
+
+  function getArousalThresholdKey() { return 'luci_arousal_threshold_' + (state.pid || 'default'); }
+  function getBaselineVolumeKey(pid) { return 'luci_baseline_volume_' + (pid || 'default'); }
+  function saveBaselineVolume(pid, value) {
+    try { localStorage.setItem(getBaselineVolumeKey(pid), String(value)); } catch (e) {}
+  }
+  function loadBaselineVolume(pid) {
+    try {
+      var v = localStorage.getItem(getBaselineVolumeKey(pid));
+      if (v != null && v !== '') { var n = parseFloat(v); if (!isNaN(n) && n > 0) return n; }
+    } catch (e) {}
+    return null;
+  }
+  function getMotionGrantedKey(pid) { return 'luci_motion_granted_' + (pid || 'default'); }
+  function setMotionGranted(pid) {
+    try { localStorage.setItem(getMotionGrantedKey(pid), '1'); } catch (e) {}
+  }
+  function getMotionGranted(pid) {
+    try { return localStorage.getItem(getMotionGrantedKey(pid)) === '1'; } catch (e) {}
+    return false;
+  }
+  function loadArousalThreshold() {
+    try {
+      var v = localStorage.getItem(getArousalThresholdKey());
+      if (v != null && v !== '') { var n = parseFloat(v); if (!isNaN(n) && n > 0) return n; }
+    } catch (e) {}
+    return null;
+  }
+  function saveArousalThreshold(val) {
+    try { localStorage.setItem(getArousalThresholdKey(), String(val)); } catch (e) {}
+    if (db && state.pid) {
+      db.collection('sleep_studies').doc(state.pid).set(
+        { arousal_threshold_sound: val, updated_at: new Date().toISOString() },
+        { merge: true }
+      ).catch(function(err) { console.warn('Save arousal to DB:', err); });
+    }
+  }
+  function getVibrationArousalKey() { return 'luci_vibration_arousal_ms_' + (state.pid || 'default'); }
+  function loadVibrationArousal() {
+    try {
+      var v = localStorage.getItem(getVibrationArousalKey());
+      if (v != null && v !== '') { var n = parseInt(v, 10); if (!isNaN(n) && n > 0) return n; }
+    } catch (e) {}
+    return null;
+  }
+  function saveVibrationArousal(ms) {
+    try { localStorage.setItem(getVibrationArousalKey(), String(ms)); } catch (e) {}
+  }
+  function getLightArousalKey() { return 'luci_light_arousal_ms_' + (state.pid || 'default'); }
+  function loadLightArousal() {
+    try {
+      var v = localStorage.getItem(getLightArousalKey());
+      if (v != null && v !== '') { var n = parseInt(v, 10); if (!isNaN(n) && n > 0) return n; }
+    } catch (e) {}
+    return null;
+  }
+  function saveLightArousal(ms) {
+    try { localStorage.setItem(getLightArousalKey(), String(ms)); } catch (e) {}
+  }
+  function getVolumeFloor() {
+    return (state.userMinVolume != null && state.userMinVolume > 0) ? state.userMinVolume : 0.016;
+  }
+  function getDisruptiveSoundVolume() {
+    return 0.8; // enforce fixed 80% for disruptive beep cues
+  }
+  function getInductionStartVolume() {
+    return LD_INDUCTION_START_VOLUME;
+  }
+  function getNextInductionVolume(currentVol) {
+    var levels = INDUCTION_VOLUME_LEVELS || [];
+    var cur = Math.max(0, Math.min(1, currentVol || 0));
+    for (var i = 0; i < levels.length; i++) {
+      if (levels[i] > cur + 0.0001) return levels[i];
+    }
+    return 1.1; // sentinel: no next step
+  }
+  function getLdInductionVolume() {
+    var arousal = state.arousal_threshold != null && state.arousal_threshold > 0 ? state.arousal_threshold : DEFAULT_AROUSAL_SOUND;
+    var baseline = getVolumeFloor();
+    return (arousal + baseline) / 2;
+  }
+  function stopTrainingCurrentAudio() {
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (state.trainingCurrentNativeTimeoutId) {
+      clearTimeout(state.trainingCurrentNativeTimeoutId);
+      state.trainingCurrentNativeTimeoutId = null;
+    }
+    if (state.trainingCurrentNativeListener && state.trainingCurrentNativeListener.remove) {
+      state.trainingCurrentNativeListener.remove().catch(function() {});
+      state.trainingCurrentNativeListener = null;
+    }
+    if (NA && state.trainingCurrentNativeAssetId) {
+      NA.stop({ assetId: state.trainingCurrentNativeAssetId }).catch(function() {});
+      NA.unload({ assetId: state.trainingCurrentNativeAssetId }).catch(function() {});
+    }
+    state.trainingCurrentNativeAssetId = null;
+    if (state.trainingCurrentHtmlAudio) {
+      try { state.trainingCurrentHtmlAudio.pause(); } catch (e) {}
+      state.trainingCurrentHtmlAudio.onended = null;
+      state.trainingCurrentHtmlAudio.onerror = null;
+      state.trainingCurrentHtmlAudio = null;
+    }
+    if (state.trainingCueWatchdogTimeoutId) {
+      clearTimeout(state.trainingCueWatchdogTimeoutId);
+      state.trainingCueWatchdogTimeoutId = null;
+    }
+  }
+  function stopAllCueAudioNow() {
+    stopTrainingCurrentAudio();
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (NA) {
+      ['beep', 'own_voice'].forEach(function(id) {
+        NA.stop({ assetId: id }).catch(function() {});
+      });
+      stopNativeBeepVariants(NA);
+    }
+    if (window.speechSynthesis && window.speechSynthesis.cancel) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
+    state.soundRunning = false;
+  }
+  function playTrainingAsset(assetPath, onEnded) {
+    // Use HTML audio for intro/guidance so pause/resume can continue from exact currentTime.
+    stopTrainingCurrentAudio();
+    var done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      stopTrainingCurrentAudio();
+      if (typeof onEnded === 'function') onEnded();
+    }
+    var audio = new Audio(assetPath);
+    state.trainingCurrentHtmlAudio = audio;
+    audio.volume = 0.8; // training assets always at 80%
+    audio.onended = finish;
+    audio.onerror = finish;
+    audio.play().catch(function() { finish(); });
+  }
+  function playTrainingIntroDummy(onEnded) {
+    playTrainingAsset(TRAINING_INTRO_ASSET, onEnded);
+  }
+  function playTrainingGuidanceDummy(onEnded) {
+    playTrainingAsset(TRAINING_GUIDANCE_ASSET, onEnded);
+  }
+  function playTrainingCue(onEnded) {
+    var c = state.tonight_condition;
+    // Condition 4 uses recorded voice; every other condition uses beep.
+    if (c === 4) {
+      playOwnVoiceAtStep(80, onEnded);
+      return;
+    }
+    playFixedBeep80(LD_T0_BEEP_DURATION_MS, onEnded);
+  }
+  function stopTrainingPhase() {
+    if (state.trainingTickIntervalId) { clearInterval(state.trainingTickIntervalId); state.trainingTickIntervalId = null; }
+    stopAllCueAudioNow();
+    state.trainingCueInFlight = false;
+    state.trainingActive = false;
+    state.trainingPaused = false;
+    state.trainingPauseStartedAtMs = null;
+    disableNoSleep();
+  }
+  function finishTrainingPhase() {
+    stopTrainingPhase();
+    state.trainingComplete = true;
+    state.trainingRemainingSec = 0;
+    state.appStep = 2;
+    render();
+  }
+  function emitTrainingCue() {
+    if (!state.trainingActive || state.trainingPaused || state.trainingCueInFlight) return;
+    state.trainingCueInFlight = true;
+    state.trainingCueCount++;
+    if (state.trainingCueWatchdogTimeoutId) clearTimeout(state.trainingCueWatchdogTimeoutId);
+    state.trainingCueWatchdogTimeoutId = setTimeout(function() {
+      if (!state.trainingActive || state.trainingPaused) return;
+      state.trainingCueInFlight = false;
+      state.trainingNextCueAtMs = Date.now() + 1000;
+      render();
+    }, 45000);
+    var idx = state.trainingCueCount;
+    playTrainingCue(function() {
+      if (!state.trainingActive) return;
+      if (state.trainingPaused) {
+        state.trainingCueInFlight = false;
+        state.trainingNextCueAtMs = null;
+        if (state.trainingCueWatchdogTimeoutId) { clearTimeout(state.trainingCueWatchdogTimeoutId); state.trainingCueWatchdogTimeoutId = null; }
+        render();
+        return;
+      }
+      if (idx <= TRAINING_GUIDANCE_COUNT) {
+        playTrainingGuidanceDummy(function() {
+          if (!state.trainingActive) return;
+          if (state.trainingPaused) {
+            state.trainingCueInFlight = false;
+            state.trainingNextCueAtMs = null;
+            if (state.trainingCueWatchdogTimeoutId) { clearTimeout(state.trainingCueWatchdogTimeoutId); state.trainingCueWatchdogTimeoutId = null; }
+            render();
+            return;
+          }
+          state.trainingCueInFlight = false;
+          // First 4 cue+guidance pairs continue immediately after guidance.
+          state.trainingNextCueAtMs = Date.now() + 1000;
+          if (state.trainingCueWatchdogTimeoutId) { clearTimeout(state.trainingCueWatchdogTimeoutId); state.trainingCueWatchdogTimeoutId = null; }
+          render();
+        });
+      } else {
+        state.trainingCueInFlight = false;
+        state.trainingNextCueAtMs = Date.now() + TRAINING_CUE_INTERVAL_MS;
+        if (state.trainingCueWatchdogTimeoutId) { clearTimeout(state.trainingCueWatchdogTimeoutId); state.trainingCueWatchdogTimeoutId = null; }
+        render();
+      }
+    });
+  }
+  function getTrainingElapsedMs(nowMs) {
+    nowMs = nowMs || Date.now();
+    if (!state.trainingStartMs) return 0;
+    var pausedExtra = state.trainingPaused && state.trainingPauseStartedAtMs ? (nowMs - state.trainingPauseStartedAtMs) : 0;
+    return Math.max(0, nowMs - state.trainingStartMs - (state.trainingPausedAccumMs || 0) - pausedExtra);
+  }
+  function toggleTrainingPause() {
+    if (!state.trainingActive) return;
+    if (!state.trainingPaused) {
+      state.trainingPaused = true;
+      state.trainingPauseStartedAtMs = Date.now();
+      if (state.trainingCurrentHtmlAudio) {
+        try { state.trainingCurrentHtmlAudio.pause(); } catch (e) {}
+      } else {
+        // If cue beep is in-flight, force stop immediately.
+        stopTrainingCurrentAudio();
+        state.trainingCueInFlight = false;
+      }
+      render();
+      return;
+    }
+    var now = Date.now();
+    if (state.trainingPauseStartedAtMs) {
+      state.trainingPausedAccumMs += Math.max(0, now - state.trainingPauseStartedAtMs);
+    }
+    state.trainingPaused = false;
+    state.trainingPauseStartedAtMs = null;
+    if (state.trainingCurrentHtmlAudio) {
+      state.trainingCurrentHtmlAudio.play().catch(function() {});
+    } else {
+      if (state.trainingNextCueAtMs != null) state.trainingNextCueAtMs = now + 1000;
+    }
+    render();
+  }
+  function skipTrainingPhase() {
+    finishTrainingPhase();
+  }
+  function restartTrainingFromBeginning() {
+    if (!state.trainingActive) return;
+    stopTrainingCurrentAudio();
+    state.trainingStartMs = Date.now();
+    state.trainingRemainingSec = Math.floor(TRAINING_DURATION_MS / 1000);
+    state.trainingCueCount = 0;
+    state.trainingIntroDone = false;
+    state.trainingIntroStarted = false;
+    state.trainingCueInFlight = false;
+    state.trainingNextCueAtMs = null;
+    state.trainingPaused = false;
+    state.trainingPauseStartedAtMs = null;
+    state.trainingPausedAccumMs = 0;
+    render();
+  }
+  function startTrainingPhaseIfNeeded() {
+    if (state.trainingActive || state.trainingComplete || state.appStep !== 'training') return;
+    state.trainingActive = true;
+    state.trainingStartMs = Date.now();
+    state.trainingRemainingSec = Math.floor(TRAINING_DURATION_MS / 1000);
+    state.trainingCueCount = 0;
+    state.trainingIntroDone = false;
+    state.trainingIntroStarted = false;
+    state.trainingCueInFlight = false;
+    state.trainingNextCueAtMs = null;
+    state.trainingPaused = false;
+    state.trainingPauseStartedAtMs = null;
+    state.trainingPausedAccumMs = 0;
+    state.trainingCurrentNativeAssetId = null;
+    state.trainingCurrentNativeListener = null;
+    state.trainingCurrentNativeTimeoutId = null;
+    state.trainingCurrentHtmlAudio = null;
+    state.trainingCueWatchdogTimeoutId = null;
+    enableNoSleep().catch(function() {});
+    state.trainingTickIntervalId = setInterval(function() {
+      if (!state.trainingActive) return;
+      var now = Date.now();
+      var elapsed = getTrainingElapsedMs(now);
+      var remain = Math.max(0, Math.ceil((TRAINING_DURATION_MS - elapsed) / 1000));
+      state.trainingRemainingSec = remain;
+      if (remain <= 0) { finishTrainingPhase(); return; }
+      if (!state.trainingPaused) {
+        if (!state.trainingIntroStarted && elapsed >= TRAINING_INTRO_DELAY_MS) {
+          state.trainingIntroStarted = true;
+          state.trainingCueInFlight = true;
+          playTrainingIntroDummy(function() {
+            state.trainingIntroDone = true;
+            state.trainingCueInFlight = false;
+            state.trainingNextCueAtMs = Date.now();
+            render();
+          });
+        } else if (state.trainingIntroDone && state.trainingNextCueAtMs != null && now >= state.trainingNextCueAtMs) {
+          emitTrainingCue();
+        }
+      }
+      render();
+    }, 500);
+  }
+
+  const pidInput = document.createElement('input');
+  pidInput.type = 'text';
+  pidInput.placeholder = 'Participant ID';
+  pidInput.id = 'pidInput';
+
+  function getPerc(sample, buffer) {
+    if (!buffer.length) return 0;
+    const count = buffer.filter(function(x) { return x <= sample; }).length;
+    return count / buffer.length;
+  }
+
+  function playText(text, vol, onEnded) {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance();
+    u.text = text;
+    u.volume = Math.max(0, Math.min(1, vol));
+    if (typeof onEnded === 'function') u.onend = onEnded;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  }
+
+  /** Prime native cue path on user gesture before timer-fired sounds. */
+  function primeAudioForSleep() {
+    playBeep(0, state.beepFrequencyHz || 800, 30);
+    if ('speechSynthesis' in window) {
+      try {
+        var u = new SpeechSynthesisUtterance('.');
+        u.volume = 0;
+        u.rate = 3;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
+    }
+  }
+
+  /** No-op: torch is native-only now; camera/getUserMedia no longer used for light. */
+  function primeLightForSleep() {}
+
+  /** Trigger a minimal vibration on user gesture so later vibrations from timers are allowed on some browsers. */
+  function primeVibrationForSleep() {
+    luciVibrate(1);
+  }
+
+  /** Play beep via NativeAudio only (LuciDreams app). */
+  function playBeep(volume, freqHz, durationMs, onEnded) {
+    durationMs = durationMs || 150;
+    var vol = Math.max(0, Math.min(1, volume));
+    window.luciLastRequestedBeepVolume = vol;
+    function finishAfter(NA, assetId) {
+      setTimeout(function() {
+        NA.stop({ assetId: assetId }).catch(function() {});
+        if (typeof onEnded === 'function') onEnded();
+      }, durationMs);
+    }
+    function playNativeBeepWithVolume(NA) {
+      if (window.luciNativeBeepVariantsReady) {
+        var variantId = getBeepVariantAssetId(vol);
+        stopNativeBeepVariants(NA);
+        return NA.stop({ assetId: 'beep' }).catch(function() {})
+          .then(function() { return NA.play({ assetId: variantId }); })
+          .then(function() { finishAfter(NA, variantId); });
+      }
+      return NA.stop({ assetId: 'beep' }).catch(function() {})
+        .then(function() { return NA.setVolume({ assetId: 'beep', volume: vol }); })
+        .catch(function() {})
+        .then(function() { return NA.play({ assetId: 'beep' }); })
+        .then(function() {
+          finishAfter(NA, 'beep');
+        });
+    }
+    if (!window.Capacitor || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) {
+      luciNativeError('audio', 'not_native');
+      if (typeof onEnded === 'function') onEnded();
+      return;
+    }
+    if (!window.luciUseNativeAudio || !window.luciNativeBeepPreloaded || !window.Capacitor.Plugins || !window.Capacitor.Plugins.NativeAudio) {
+      ensureNativeBeepPreloaded().then(function(ok) {
+        if (!ok || !window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.NativeAudio) {
+          luciNativeError('audio', 'unavailable');
+          if (typeof onEnded === 'function') onEnded();
+          return;
+        }
+        var NativeAudio2 = window.Capacitor.Plugins.NativeAudio;
+        ensureNativeBeepVariantsPreloaded().then(function() {
+          return playNativeBeepWithVolume(NativeAudio2);
+        }).catch(function(e2) {
+          window.luciNativeAudioLastError = 'play beep: ' + (e2 && (e2.message || e2.error || String(e2)) || 'unknown');
+          luciNativeError('audio', 'unavailable');
+          if (typeof onEnded === 'function') onEnded();
+        });
+      });
+      return;
+    }
+    var NativeAudio = window.Capacitor.Plugins.NativeAudio;
+    ensureNativeBeepVariantsPreloaded().then(function() {
+      return playNativeBeepWithVolume(NativeAudio);
+    }).catch(function(e3) {
+      window.luciNativeAudioLastError = 'play beep: ' + (e3 && (e3.message || e3.error || String(e3)) || 'unknown');
+      luciNativeError('audio', 'unavailable');
+      if (typeof onEnded === 'function') onEnded();
+    });
+  }
+
+  function playBeepForRem(volume, freqHz, durationMs, onEnded) {
+    playBeep(volume, freqHz, durationMs, onEnded);
+  }
+  function playFixedBeep80(durationMs, onEnded) {
+    durationMs = durationMs || 200;
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
+      playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+      return;
+    }
+    ensureNativeBeepPreloaded().then(function(ok) {
+      if (!ok) {
+        playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+        return;
+      }
+      ensureNativeBeepVariantsPreloaded().then(function(ready) {
+        if (!ready) {
+          playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+          return;
+        }
+        stopNativeBeepVariants(NA);
+        NA.stop({ assetId: 'beep' }).catch(function() {})
+          .then(function() { return NA.play({ assetId: FIXED_BEEP_80_ASSET_ID }); })
+          .then(function() {
+            setTimeout(function() {
+              NA.stop({ assetId: FIXED_BEEP_80_ASSET_ID }).catch(function() {});
+              if (typeof onEnded === 'function') onEnded();
+            }, durationMs);
+          })
+          .catch(function() {
+            playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+          });
+      }).catch(function() {
+        playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+      });
+    }).catch(function() {
+      playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+    });
+  }
+
+  function playFixedBeep100(durationMs, onEnded) {
+    durationMs = durationMs || 200;
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
+      playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
+      return;
+    }
+    ensureNativeBeepPreloaded().then(function(ok) {
+      if (!ok) {
+        playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
+        return;
+      }
+      ensureNativeBeepVariantsPreloaded().then(function(ready) {
+        if (!ready) {
+          playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
+          return;
+        }
+        stopNativeBeepVariants(NA);
+        NA.stop({ assetId: 'beep' }).catch(function() {})
+          .then(function() { return NA.play({ assetId: FIXED_BEEP_100_ASSET_ID }); })
+          .then(function() {
+            setTimeout(function() {
+              NA.stop({ assetId: FIXED_BEEP_100_ASSET_ID }).catch(function() {});
+              if (typeof onEnded === 'function') onEnded();
+            }, durationMs);
+          })
+          .catch(function() {
+            playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
+          });
+      }).catch(function() {
+        playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
+      });
+    }).catch(function() {
+      playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
+    });
+  }
+
+function playFixedBeep75(durationMs, onEnded) {
+    durationMs = durationMs || 200;
+    var Cap = window.Capacitor;
+    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
+      playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+      return;
+    }
+    ensureNativeBeepPreloaded().then(function(ok) {
+      if (!ok) {
+        playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+        return;
+      }
+      ensureNativeBeepVariantsPreloaded().then(function(ready) {
+        if (!ready) {
+          playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+          return;
+        }
+        stopNativeBeepVariants(NA);
+        NA.stop({ assetId: 'beep' }).catch(function() {})
+          .then(function() { return NA.play({ assetId: FIXED_BEEP_75_ASSET_ID }); })
+          .then(function() {
+            setTimeout(function() {
+              NA.stop({ assetId: FIXED_BEEP_75_ASSET_ID }).catch(function() {});
+              if (typeof onEnded === 'function') onEnded();
+            }, durationMs);
+          })
+          .catch(function() {
+            playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+          });
+      }).catch(function() {
+        playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+      });
+    }).catch(function() {
+      playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+    });
+  }
+
+  function playLdT0Beep() {
+    var arousal = state.arousal_threshold != null && state.arousal_threshold > 0 ? state.arousal_threshold : DEFAULT_AROUSAL_SOUND;
+    var vol = Math.min(1, arousal + T0_VOLUME_BOOST);
+    if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'beep', type: 'T0', level: vol, info: 'LD induction' });
+    state.soundRunning = true;
+    playBeep(vol, state.beepFrequencyHz, LD_T0_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
+  }
+  function playLdT2Beep() {
+    var vol = getLdInductionVolume();
+    if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'beep', type: 'T2', level: vol, info: 'cue beep' });
+    state.soundRunning = true;
+    playBeep(vol, state.beepFrequencyHz, LD_T2_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
+  }
+  function luciVibrate(ms) {
+    if (!window.Capacitor || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) {
+      luciNativeError('vibration', 'not_native');
+      return;
+    }
+    if (!window.luciUseNativeHaptics || !window.Capacitor.Plugins || !window.Capacitor.Plugins.Haptics) {
+      luciNativeError('vibration', 'unavailable');
+      return;
+    }
+    window.Capacitor.Plugins.Haptics.vibrate({ duration: ms }).catch(function() {
+      luciNativeError('vibration', 'unavailable');
+    });
+  }
+  function triggerVibration(ms) {
+    ms = ms || DEFAULT_AROUSAL_VIBRATION_MS;
+    state.soundRunning = true;
+    if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'vibration', type: 'T0', level: ms / 300, info: ms + 'ms' });
+    luciVibrate(ms);
+    setTimeout(function() { state.soundRunning = false; render(); }, ms + 100);
+  }
+  /** Flashlight via native torch only. Errors if native API not available. onOutcome optional: { method: 'torch'|'error', error?: string }. */
+  function triggerLight(durationMs, onOutcome) {
+    durationMs = durationMs || 250;
+    state.soundRunning = true;
+    if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'flashlight', type: 'T0', level: 1, info: durationMs + 'ms' });
+    function report(method, err) {
+      if (typeof onOutcome === 'function') onOutcome({ method: method, error: err || undefined });
+    }
+    if (!window.Capacitor || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) {
+      luciNativeError('flashlight', 'not_native');
+      report('error', 'not_native');
+      state.soundRunning = false;
+      render();
+      return;
+    }
+    if (!window.luciUseNativeTorch || !window.Capacitor.Plugins || !window.Capacitor.Plugins.Torch) {
+      luciNativeError('flashlight', 'unavailable');
+      report('error', 'unavailable');
+      state.soundRunning = false;
+      render();
+      return;
+    }
+    var Torch = window.Capacitor.Plugins.Torch;
+    Torch.enable().then(function() {
+      report('torch');
+      setTimeout(function() {
+        Torch.disable().then(function() { state.soundRunning = false; render(); }).catch(function() { state.soundRunning = false; render(); });
+      }, durationMs);
+    }).catch(function(e) {
+      var errMsg = e && (e.message || String(e));
+      luciNativeError('flashlight', errMsg);
+      report('error', errMsg);
+      state.soundRunning = false;
+      render();
+    });
+  }
+  var idbDb = null;
+  function openIdb(cb) {
+    if (idbDb) { cb(idbDb); return; }
+    if (!window.indexedDB) { cb(null); return; }
+    var req = indexedDB.open(LUCI_IDB_NAME, 1);
+    req.onupgradeneeded = function() { req.result.createObjectStore(LUCI_IDB_STORE, { keyPath: 'pid' }); };
+    req.onsuccess = function() { idbDb = req.result; cb(idbDb); };
+    req.onerror = function() { cb(null); };
+  }
+  function getVoiceBlob(pid, cb) {
+    openIdb(function(db) {
+      if (!db) { cb(null); return; }
+      var tx = db.transaction(LUCI_IDB_STORE, 'readonly');
+      var store = tx.objectStore(LUCI_IDB_STORE);
+      var r = store.get(pid);
+      r.onsuccess = function() { cb(r.result && r.result.blob ? r.result.blob : null); };
+      r.onerror = function() { cb(null); };
+    });
+  }
+  function setVoiceBlob(pid, blob, cb) {
+    openIdb(function(db) {
+      if (!db) { if (cb) cb(false); return; }
+      var tx = db.transaction(LUCI_IDB_STORE, 'readwrite');
+      var store = tx.objectStore(LUCI_IDB_STORE);
+      store.put({ pid: pid, blob: blob });
+      tx.oncomplete = function() {
+        state.voiceVariantCachePid = null;
+        state.voiceVariantBlobs = null;
+        if (cb) cb(true);
+      };
+      tx.onerror = function() { if (cb) cb(false); };
+    });
+  }
+  function hasVoiceForPid(pid, cb) {
+    getVoiceBlob(pid, function(blob) { cb(!!blob); });
+  }
+
+  function showSnackbar(msg) {
+    const el = document.getElementById('snackbar');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(function() { el.classList.add('hidden'); }, 3000);
+  }
+
+  /** Require native APIs; show error and return false if not available. */
+  function luciNativeError(feature, detail) {
+    var audioReason = (window.luciNativeAudioLastError || '').trim();
+    var reasonSuffix = audioReason ? (' Reason: ' + audioReason) : '';
+    var msg = feature === 'flashlight' && (detail === 'not_native' || detail === 'unavailable')
+      ? (detail === 'not_native' ? 'Flashlight requires the LuciDreams app.' : 'Flashlight is not available on this device.')
+      : feature === 'audio' && (detail === 'not_native' || detail === 'unavailable')
+      ? (detail === 'not_native' ? 'Audio requires the LuciDreams app.' : 'Native audio is not ready.' + reasonSuffix)
+      : feature === 'vibration' && (detail === 'not_native' || detail === 'unavailable')
+      ? (detail === 'not_native' ? 'Vibration requires the LuciDreams app.' : 'Vibration is not available on this device.')
+      : 'Native ' + feature + ' is required.';
+    if (feature === 'audio') console.error('Native audio failure detail:', detail, audioReason);
+    showSnackbar(msg);
+    return false;
+  }
+
+  /** Run after login (step 1): show errors for missing native APIs so the user doesn't start the night with them broken. */
+  function checkNativeApisOnLogin() {
+    var Cap = window.Capacitor;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) {
+      showSnackbar('Flashlight, audio, and vibration require the LuciDreams app. Do not start the night in the browser.');
+      return;
+    }
+    var missing = [];
+    if (!window.luciUseNativeTorch) missing.push('flashlight');
+    if (!window.luciUseNativeHaptics) missing.push('vibration');
+    if (!window.luciUseNativeAudio || !window.luciNativeBeepPreloaded) missing.push('audio');
+    if (!Cap.Plugins || !Cap.Plugins.Filesystem) missing.push('voice playback');
+    if (missing.length) {
+      showSnackbar('Unavailable on this device: ' + missing.join(', ') + '. Do not start the night until the LuciDreams app is working.');
+    }
+  }
+
+  function processMotionPerSecond(motionForSecond) {
+    state.epochs++;
+    state.secondsRecorded++;
+
+    state.totalHistory.push(motionForSecond >= SIG_MOTION ? 1 : 0);
+    if (state.totalHistory.length > BUFFER_SIZE) state.totalHistory.shift();
+    const currentMotionSum = state.totalHistory.reduce(function(a, b) { return a + b; }, 0);
+    state.summedMotion.push(currentMotionSum);
+    state.motionHistory.push(motionForSecond);
+    if (state.summedMotion.length > BUFFER_SIZE) state.summedMotion.shift();
+    if (state.motionHistory.length > BUFFER_SIZE) state.motionHistory.shift();
+
+    if (state.secondsRecorded <= REM_GATE_SECONDS) state.baselineMotionSum += motionForSecond;
+
+    state.remSmoothWindowValues.push(motionForSecond);
+    state.remSmoothWindowSum += motionForSecond;
+    if (state.remSmoothWindowValues.length > REM_SMOOTH_WINDOW_SEC) {
+      state.remSmoothWindowSum -= state.remSmoothWindowValues.shift();
+    }
+    if (state.remSmoothWindowValues.length >= REM_SMOOTH_WINDOW_SEC) {
+      state.smoothedMotionCurrent = state.remSmoothWindowSum / state.remSmoothWindowValues.length;
+      // Populate reference series all night so the percentile cutoff evolves over time.
+      state.smoothedMotionSeries.push(state.smoothedMotionCurrent);
+      var dynamicCutoff = getStillnessCutoffFromSeries(state.smoothedMotionSeries);
+      state.motion80pctCutoffCurrent = dynamicCutoff;
+      if (dynamicCutoff != null) state.motion80pctCutoffSeries.push(dynamicCutoff);
+    } else {
+      state.smoothedMotionCurrent = null;
+      state.motion80pctCutoffCurrent = null;
+    }
+
+    if (state.secondsRecorded === REM_GATE_SECONDS && state.smoothedMotionSeries.length > 0) {
+      var s4h = state.smoothedMotionSeries;
+      var bucketMeanFirst4h = s4h.reduce(function(a, b) { return a + b; }, 0) / s4h.length;
+      console.log('REM gate (4h): REM logic enabled. n=', s4h.length, 'mean=', bucketMeanFirst4h, '(stillness compares current rolling value vs evolving all-night distribution at', REM_STILLNESS_PERCENT_OF_SERIES_MEAN * 100, '%)');
+    }
+
+    const afterGate = state.fakeRemTestActive || (
+      state.secondsRecorded > REM_GATE_SECONDS &&
+      state.smoothedMotionSeries.length > 0 &&
+      state.smoothedMotionCurrent != null
+    );
+
+    if (afterGate) {
+      var seriesAll = state.smoothedMotionSeries;
+      var smoothedMotion = state.smoothedMotionCurrent;
+      var seriesMean = seriesAll.reduce(function(a, b) { return a + b; }, 0) / seriesAll.length;
+      var movementNoiseFloor = seriesMean * REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
+      var belowCount = seriesAll.reduce(function(count, v) { return count + (smoothedMotion < v ? 1 : 0); }, 0);
+      var isStillSmoothed = (belowCount / seriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
+      if (state.fakeRemTestActive) isStillSmoothed = true;
+      var rawAboveCount = seriesAll.reduce(function(count, v) { return count + (motionForSecond > v ? 1 : 0); }, 0);
+      var isRawAbove80PercentOfSeries = (rawAboveCount / seriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
+
+      function finalizeCurrentRemEpisode() {
+        if (!state.inRemEpisode) return;
+        var dur = state.secondsRecorded - state.remEpisodeStartSeconds;
+        var trains = state.currentEpisodeTrains.slice();
+        if (trains.length) {
+          var last = trains[trains.length - 1];
+          if (last.disruptive && last.end_epoch_sec == null) {
+            last.end_epoch_sec = state.secondsRecorded;
+            last.duration_sec = state.secondsRecorded - last.disruptive.start_epoch_sec;
+          }
+        }
+        state.remEpisodes.push({
+          start_epoch_sec: state.remEpisodeStartSeconds,
+          duration_sec: dur,
+          device_time_start: state.remEpisodeStartTime,
+          trains: trains
+        });
+        state.inRemEpisode = false;
+        state.fakeRemTestActive = false;
+        state.consecutiveRemSeconds = 0;
+        state.currentRemEpisodeEntryThreshold = null;
+        state.trainPhase = null;
+        state.trainStartEpoch = null;
+        state.lastInductionPlayEpoch = null;
+        clearDisruptiveTimeouts();
+        if (nextTrainTimeoutId) { clearTimeout(nextTrainTimeoutId); nextTrainTimeoutId = null; }
+        if (state.soundRunning) stopSound();
+        cancelScheduledCue();
+      }
+
+      if (isRawAbove80PercentOfSeries) {
+        state.consecutive_seconds_above_threshold++;
+        var inArousalWindow = state.lastInductionPlayEpoch != null && (state.secondsRecorded - state.lastInductionPlayEpoch) < AROUSAL_CHECK_WINDOW_SEC;
+        if (!state.fakeRemTestActive && state.consecutive_seconds_above_threshold === MOVEMENT_DURATION_FOR_AROUSAL && inArousalWindow && state.trainPhase === 'induction') {
+          var train = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
+          if (train && train.induction.cues.length) {
+            train.induction.cues[train.induction.cues.length - 1].arousal_detected = true;
+            train.induction.arousal_threshold = state.inductionVolume;
+            state.arousal_threshold = state.inductionVolume;
+            saveArousalThreshold(state.arousal_threshold);
+            console.log('Arousal threshold set:', state.arousal_threshold);
+          }
+          endTrain(true);
+        }
+      } else {
+        state.consecutive_seconds_above_threshold = 0;
+      }
+
+      if (!state.inRemEpisode) {
+        if (!isStillSmoothed) {
+          state.consecutiveRemSeconds = 0;
+        } else {
+        var refractoryOk = state.lastCueEpoch === 0 || (state.secondsRecorded - state.lastCueEpoch >= REFRACTORY_PERIOD_SEC);
+        var readyForFirstTrain = !state.inRemEpisode;
+
+        if (readyForFirstTrain && state.trainPhase === null && refractoryOk && !state.soundRunning) {
+          state.remEpisodeStartSeconds = state.secondsRecorded;
+          state.remEpisodeStartTime = new Date().toISOString();
+          state.currentRemEpisodeEntryThreshold = movementNoiseFloor;
+          state.inRemEpisode = true;
+          state.currentEpisodeTrains = [];
+          state.lastCueEpoch = 0;
+          if (state.tonight_condition !== 0 && !hasReachedNightTrainCap() && !hasReachedEpisodeTrainCap()) startTrain();
+        }
+        }
+      } else {
+        if (!isStillSmoothed) {
+          finalizeCurrentRemEpisode();
+        } else if (state.trainPhase === 'induction' && !state.soundRunning && state.lastInductionPlayEpoch != null) {
+          var elapsed = state.secondsRecorded - state.lastInductionPlayEpoch;
+          if (elapsed >= AROUSAL_CHECK_WINDOW_SEC) {
+            var train2 = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
+            if (train2 && train2.induction.arousal_threshold == null) {
+              var nextVol = getNextInductionVolume(state.inductionVolume);
+              if (nextVol <= state.inductionCap + 0.001) {
+                state.inductionVolume = nextVol;
+                playInductionCue();
+              } else {
+                endTrain(false);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      if (state.fakeRemTestActive) {
+        render();
+        return;
+      }
+      // Before 4h gate or before the rolling window is available: no REM / trains from this logic.
+      state.consecutive_seconds_above_threshold = 0;
+      state.inRemEpisode = false;
+      state.consecutiveRemSeconds = 0;
+      state.currentRemEpisodeEntryThreshold = null;
+      state.trainPhase = null;
+      state.trainStartEpoch = null;
+      state.lastInductionPlayEpoch = null;
+      clearDisruptiveTimeouts();
+      if (nextTrainTimeoutId) { clearTimeout(nextTrainTimeoutId); nextTrainTimeoutId = null; }
+      cancelScheduledCue();
+      if (state.soundRunning) stopSound();
+    }
+
+    render();
+  }
+
+  function requestMotionPermission() {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      return DeviceMotionEvent.requestPermission().then(function(perm) {
+        return perm === 'granted' ? 'granted' : 'denied';
+      }).catch(function() { return 'denied'; });
+    }
+    return Promise.resolve('granted');
+  }
+
+  function enableNoSleep() {
+    if (!state.noSleep) state.noSleep = new NoSleep();
+    return state.noSleep.enable ? state.noSleep.enable() : Promise.resolve();
+  }
+
+  function disableNoSleep() {
+    if (state.noSleep && state.noSleep.disable) state.noSleep.disable();
+  }
+
+  function handleStartSequence() {
+    requestMotionPermission().then(function(result) {
+      if (result === 'granted') enableNoSleep();
+      setMotionGranted(state.pid);
+      var savedBaseline = loadBaselineVolume(state.pid);
+      if (savedBaseline != null && savedBaseline > 0) {
+        state.userMinVolume = savedBaseline;
+        state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
+        state.finalSleepVolume = savedBaseline;
+        state.baselineSliderVolume = Math.min(1, Math.max(0.01, savedBaseline));
+        state.appStep = 4;
+      } else {
+        state.appStep = 3;
+        state.baselineSliderVolume = state.userMinVolume != null ? Math.min(1, Math.max(0.01, state.userMinVolume)) : 0.1;
+      }
+      render();
+    }).catch(function() {
+      setMotionGranted(state.pid);
+      var savedBaseline = loadBaselineVolume(state.pid);
+      if (savedBaseline != null && savedBaseline > 0) {
+        state.userMinVolume = savedBaseline;
+        state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
+        state.finalSleepVolume = savedBaseline;
+        state.appStep = 4;
+      } else {
+        state.appStep = 3;
+      }
+      render();
+    });
+  }
+
+  function playBaselinePreview(vol) {
+    vol = Math.max(0.01, Math.min(1, vol));
+    if (state.soundType === 'beep') {
+      playBeep(vol, state.beepFrequencyHz, state.beepDurationMs);
+    } else {
+      playText(state.keyword, vol);
+    }
+  }
+
+  function getVolumePlugin() {
+    var Plugins = window.Capacitor && window.Capacitor.Plugins;
+    if (!Plugins) return null;
+    return Plugins.VolumeButtons || Plugins.VolumeControl || null;
+  }
+
+  function clearVolumeWatch() {
+    var VP = getVolumePlugin();
+    if (VP && VP.clearWatch) VP.clearWatch().catch(function() {});
+    if (VP && VP.removeAllListeners) VP.removeAllListeners().catch(function() {});
+  }
+
+  function setBaseline() {
+    if (state._volumeWatchActive) {
+      state._volumeWatchActive = false;
+      clearVolumeWatch();
+    }
+    var v = Math.max(0.01, Math.min(1, parseFloat(state.baselineSliderVolume) || 0.1));
+    state.userMinVolume = v;
+    state.titrationCeiling = Math.min(1, v + USER_MIN_VOLUME_CEILING_DELTA);
+    state.finalSleepVolume = v;
+    saveBaselineVolume(state.pid, v);
+    state.appStep = 4;
+    render();
+  }
+
+  function activateMotionAndStartSleep() {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().then(function(result) {
+        if (result === 'granted') {
+          enableNoSleep();
+          startRecordingMotion();
+        } else {
+          showSnackbar('Motion detection permission is required to proceed.');
+        }
+      }).catch(function() {
+        showSnackbar('Motion permission is required.');
+      });
+    } else {
+      enableNoSleep();
+      startRecordingMotion();
+    }
+  }
+
+  function startRecordingMotion() {
+    // Condition/night should be assigned once during config load, not again here.
+    if (state.pid && state.tonight_condition == null) ensureConditionForTonight(state.pid);
+    // Prime native audio, vibration on this user gesture before timer-fired cues
+    primeAudioForSleep();
+    primeVibrationForSleep();
+    primeLightForSleep();
+    enableNoSleep();
+    state.appStep = 5;
+    state.motionThisSecond = 0;
+    state.motionSamplesForBackend = [];
+    state.secondsRecorded = 0;
+    state.smoothedMotionSeries = [];
+    state.smoothedMotionCurrent = null;
+    state.motion80pctCutoffSeries = [];
+    state.motion80pctCutoffCurrent = null;
+    state.remSmoothWindowValues = [];
+    state.remSmoothWindowSum = 0;
+    state.baselineMotionSum = 0;
+    state.oldValuesSet = false;
+    state.consecutiveRemSeconds = 0;
+    state.remEpisodes = [];
+    state.rawSensorSamples = [];
+    state.inRemEpisode = false;
+    state.currentRemEpisodeEntryThreshold = null;
+    state.lastCueEpoch = 0;
+      state.consecutive_seconds_above_threshold = 0;
+      state.trainPhase = null;
+    state.trainStartEpoch = null;
+    state.lastInductionPlayEpoch = null;
+    state.currentEpisodeTrains = [];
+    state.disruptiveTimeouts = [];
+    state.inductionVolume = getInductionStartVolume();
+    state.inductionCap = 1;
+    state.fakeRemTestActive = false;
+    if (state.fakeRemTestTimeoutId) {
+      clearTimeout(state.fakeRemTestTimeoutId);
+      state.fakeRemTestTimeoutId = null;
+    }
+    state.fakeTestSequenceActive = false;
+    state.fakeTestConditionIndex = 0;
+    state.fakeTestConditions = [1, 2, 3, 4, 5, 6, 7];
+    var savedThreshold = loadArousalThreshold();
+    state.arousal_threshold = savedThreshold;
+
+    function onAccel(e) {
+      const x = e.accelerationIncludingGravity.x;
+      const y = e.accelerationIncludingGravity.y;
+      const z = e.accelerationIncludingGravity.z;
+      state.lastRawX = x; state.lastRawY = y; state.lastRawZ = z;
+      const magnitude = Math.sqrt(x*x + y*y + z*z);
+      state.lastMagnitude = magnitude;
+      if (!state.oldValuesSet) {
+        state.oldX = x; state.oldY = y; state.oldZ = z;
+        state.oldValuesSet = true;
+        return;
+      }
+      const diff = Math.abs(x - state.oldX) + Math.abs(y - state.oldY) + Math.abs(z - state.oldZ);
+      state.motionThisSecond += diff;
+      state.oldX = x; state.oldY = y; state.oldZ = z;
+    }
+
+    if (window.DeviceMotionEvent) {
+      state.accelHandler = onAccel;
+      window.addEventListener('devicemotion', onAccel);
+    }
+
+    state.motionSampleTimer = setInterval(function() {
+      let motion = state.motionThisSecond;
+      state.motionThisSecond = 0;
+      let motionFromTilt = state.lastMagnitude < 2 ? state.lastMagnitude : Math.abs(state.lastMagnitude - 9.81);
+      motion = motion + motionFromTilt;
+      state.motionSamplesForBackend.push(motion);
+      processMotionPerSecond(motion);
+    }, 1000);
+
+    state.sleepStartTime = Date.now();
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    state.timerInterval = setInterval(function() {
+      if (state.appStep !== 5) return;
+      render();
+    }, 1000);
+    setupTemporaryFakeRemForTesting();
+
+    render();
+  }
+
+  function startStimulation() {
+    state.soundRunning = true;
+    state.totalStimCount++;
+    var floor = getVolumeFloor();
+    var playVolume = Math.max(floor, Math.min(1, state.finalSleepVolume || state.baselineSliderVolume || 0.01));
+    state.soundLog.push({
+      timestamp: Date.now(),
+      keyword: state.keyword,
+      sound_type: state.soundType,
+      volume: playVolume,
+      epoch: state.epochs,
+      playback_completed: false
+    });
+    var logEntry = state.soundLog[state.soundLog.length - 1];
+    function markPlaybackCompleted() { logEntry.playback_completed = true; render(); }
+    if (state.soundType === 'beep') {
+      playBeepForRem(playVolume, state.beepFrequencyHz, state.beepDurationMs, markPlaybackCompleted);
+    } else {
+      playText(state.keyword, playVolume, markPlaybackCompleted);
+    }
+    state.soundHandle = null;
+    render();
+  }
+
+  function stopSound() {
+    cancelScheduledCue();
+    stopDisruptiveWaveNoise();
+    if (state.soundRunning) {
+      state.soundRunning = false;
+      if (state.soundHandle) clearInterval(state.soundHandle);
+      state.soundHandle = null;
+    }
+    render();
+  }
+
+  function computeMotionAverages() {
+    var motion = state.motionSamplesForBackend;
+    var remEpisodes = state.remEpisodes;
+    var baseline_avg = null;
+    var rem_episode_averages = [];
+    var intermediate_avg = null;
+    var gate = REM_GATE_SECONDS;
+    if (motion.length >= gate) {
+      var sum = 0;
+      for (var i = 0; i < gate; i++) sum += motion[i];
+      baseline_avg = sum / gate;
+    }
+    for (var e = 0; e < remEpisodes.length; e++) {
+      var start = remEpisodes[e].start_epoch_sec;
+      var dur = remEpisodes[e].duration_sec;
+      if (start + dur <= motion.length && dur > 0) {
+        sum = 0;
+        for (var j = start; j < start + dur && j < motion.length; j++) sum += motion[j];
+        rem_episode_averages.push({
+          start_epoch_sec: start,
+          duration_sec: dur,
+          device_time_start: remEpisodes[e].device_time_start,
+          avg_motion: sum / dur
+        });
+      }
+    }
+    if (motion.length > gate) {
+      var inRem = {};
+      for (var e = 0; e < remEpisodes.length; e++) {
+        var start = remEpisodes[e].start_epoch_sec;
+        var dur = remEpisodes[e].duration_sec;
+        for (var k = 0; k < dur && start + k < motion.length; k++) inRem[start + k] = true;
+      }
+      sum = 0;
+      var count = 0;
+      for (var i = gate; i < motion.length; i++) {
+        if (!inRem[i]) { sum += motion[i]; count++; }
+      }
+      if (count > 0) intermediate_avg = sum / count;
+    }
+    return { baseline_avg: baseline_avg, rem_episode_averages: rem_episode_averages, intermediate_avg: intermediate_avg };
+  }
+
+  function episodeMotionAvg(startSec, durationSec) {
+    var motion = state.motionSamplesForBackend;
+    if (startSec + durationSec > motion.length || durationSec <= 0) return null;
+    var sum = 0;
+    for (var i = 0; i < durationSec; i++) sum += motion[startSec + i] || 0;
+    return sum / durationSec;
+  }
+
+  /** Native bridge status as object (Firestore); Qualtrics uses JSON string of same shape. */
+  function buildNativeApiStatusObject() {
+    var Cap = window.Capacitor;
+    var native = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
+    return {
+      is_native: native,
+      torch: !!window.luciUseNativeTorch,
+      haptics: !!window.luciUseNativeHaptics,
+      native_audio: !!window.luciUseNativeAudio
+    };
+  }
+
+  /**
+   * Aggregates from finalized rem_periods[] — same numbers/text as Qualtrics embedded fields.
+   * Flat `trains` entries include episode_index / train_index for joins with rem_periods.
+   */
+  function computeStimulationRollups(rem_periods) {
+    var periods = rem_periods || [];
+    var induction_cues = [];
+    var trains_flat = [];
+    var train_starts = [];
+    var total_train_count = 0;
+    var arousal_reached_count = 0;
+    var induction_highest_volume = null;
+    var ei, tj, ck, ep, trs, tr, d, cues, c;
+
+    for (ei = 0; ei < periods.length; ei++) {
+      ep = periods[ei];
+      trs = ep.trains || [];
+      total_train_count += trs.length;
+      for (tj = 0; tj < trs.length; tj++) {
+        tr = trs[tj];
+        var dType = tr && tr.disruptive ? tr.disruptive.condition : null;
+        var flatTrain = {
+          episode_index: ei,
+          train_index: tj,
+          end_epoch_sec: tr.end_epoch_sec != null ? tr.end_epoch_sec : null,
+          disruptive: tr.disruptive || {},
+          induction: tr.induction || { cues: [], arousal_threshold: null }
+        };
+        if (dType !== 3) flatTrain.duration_sec = tr.duration_sec != null ? tr.duration_sec : null;
+        trains_flat.push(flatTrain);
+        d = tr.disruptive || {};
+        if (d.device_time_start) train_starts.push(d.device_time_start);
+        cues = (tr.induction && tr.induction.cues) || [];
+        for (ck = 0; ck < cues.length; ck++) {
+          c = cues[ck];
+          induction_cues.push({
+            episode_index: ei,
+            train_index: tj,
+            volume: c.volume,
+            epoch_sec: c.epoch_sec,
+            took_place: c.took_place,
+            arousal_detected: c.arousal_detected
+          });
+          if (c.arousal_detected) arousal_reached_count++;
+          if (c.volume != null && (induction_highest_volume === null || c.volume > induction_highest_volume)) {
+            induction_highest_volume = c.volume;
+          }
+        }
+      }
+    }
+    train_starts.sort();
+
+    var rem_motion_weighted = 0;
+    var rem_motion_dur = 0;
+    for (ei = 0; ei < periods.length; ei++) {
+      var ma = periods[ei].motion_avg;
+      var du = periods[ei].duration_sec || 0;
+      if (ma != null && du > 0) {
+        rem_motion_weighted += ma * du;
+        rem_motion_dur += du;
+      }
+    }
+    var rem_motion_avg = rem_motion_dur > 0 ? rem_motion_weighted / rem_motion_dur : null;
+
+    return {
+      induction_cues: induction_cues,
+      trains: trains_flat,
+      train_starts: train_starts,
+      total_train_count: total_train_count,
+      arousal_reached_count: arousal_reached_count,
+      induction_highest_volume: induction_highest_volume,
+      rem_motion_avg: rem_motion_avg,
+      train_cap_reached_count: total_train_count >= NIGHT_MAX_TRAINS ? 1 : 0,
+      first_train_start_time: train_starts.length ? train_starts[0] : null,
+      last_train_start_time: train_starts.length ? train_starts[train_starts.length - 1] : null
+    };
+  }
+
+  function getStillnessCutoffFromSeries(series) {
+    var s = series || [];
+    if (!s.length) return null;
+    var sorted = s.slice().sort(function(a, b) { return a - b; });
+    var idx = Math.max(0, Math.min(sorted.length - 1, Math.floor((1 - REM_STILLNESS_PERCENT_OF_SERIES_MEAN) * (sorted.length - 1))));
+    return sorted[idx];
+  }
+
+  function getFirst4hSeriesStillnessCutoff() {
+    var s = state.smoothedMotionSeries || [];
+    return getStillnessCutoffFromSeries(s);
+  }
+
+  /**
+   * Returns { firestoreDoc, surveyData }. Firestore includes full rem_periods (episodes + nested trains).
+   * surveyData adds flat trains + motionAvgs for Qualtrics URL (motion breakdowns not stored in Firestore).
+   */
+  function buildSleepSessionPayload(activeMode) {
+    var rawEpisodes = state.remEpisodes.slice();
+    var totalRemMinutes = rawEpisodes.reduce(function(sum, ep) { return sum + Math.round((ep.duration_sec || 0) / 60); }, 0);
+    var motionAvgs = computeMotionAverages();
+    var cond = state.tonight_condition != null ? state.tonight_condition : null;
+    var soundArousal = state.arousal_threshold != null && state.arousal_threshold > 0 ? state.arousal_threshold : (loadArousalThreshold() || null);
+    var deviceTime = new Date().toISOString();
+    var nightStartIso = state.sleepStartTime ? new Date(state.sleepStartTime).toISOString() : null;
+    var nightNumStr = getNightNumberForSurvey(state.pid);
+    var night_number = nightNumStr === '' ? null : Number(nightNumStr);
+
+    var rem_periods = rawEpisodes.map(function(ep) {
+      var durSec = ep.duration_sec || 0;
+      var trains = (ep.trains || []).map(function(t) {
+        var d = t.disruptive || {};
+        var out = {
+          end_epoch_sec: t.end_epoch_sec != null ? t.end_epoch_sec : null,
+          disruptive: {
+            start_epoch_sec: d.start_epoch_sec,
+            condition: d.type != null ? d.type : null,
+            device_time_start: d.device_time_start || null,
+            took_place: !!d.took_place,
+            params: d.params || {}
+          },
+          induction: {
+            cues: (t.induction.cues || []).map(function(c) {
+              return {
+                volume: c.volume,
+                epoch_sec: c.epoch_sec,
+                took_place: c.took_place,
+                arousal_detected: c.arousal_detected
+              };
+            }),
+            arousal_threshold: t.induction.arousal_threshold
+          }
+        };
+        if (d.type !== 3) out.duration_sec = t.duration_sec != null ? t.duration_sec : null;
+        return out;
+      });
+      return {
+        start_epoch_sec: ep.start_epoch_sec,
+        duration_sec: durSec,
+        device_time_start: ep.device_time_start || null,
+        motion_avg: episodeMotionAvg(ep.start_epoch_sec, durSec),
+        trains: trains
+      };
+    });
+
+    var roll = computeStimulationRollups(rem_periods);
+    var first4hStillnessCutoff = getFirst4hSeriesStillnessCutoff();
+    var cutoffSeries = (state.motion80pctCutoffSeries || []).slice();
+
+    var general = {
+      session_type: activeMode,
+      condition: cond,
+      device_time_end: deviceTime,
+      device_time_start: nightStartIso,
+      night_number: night_number,
+      epochs_count: state.epochs,
+      motion_80pct_cutoff_first_4h: first4hStillnessCutoff,
+      rem_minutes: totalRemMinutes,
+      rem_motion_avg: roll.rem_motion_avg,
+      rem_episode_count: rem_periods.length,
+      arousal_threshold: soundArousal,
+      arousal_reached_count: roll.arousal_reached_count,
+      induction_highest_volume: roll.induction_highest_volume,
+      train_cap_reached_count: roll.train_cap_reached_count,
+      first_train_start_time: roll.first_train_start_time,
+      last_train_start_time: roll.last_train_start_time,
+      native_api_status: buildNativeApiStatusObject(),
+      night_max_trains: NIGHT_MAX_TRAINS,
+      total_trains_delivered: roll.total_train_count,
+      app_version: 'luci2026'
+    };
+
+    var firestoreDoc = {
+      participant_id: state.pid,
+      general: general
+    };
+    firestoreDoc.rem_dynamic_thresholds = {
+      motion_80pct_cutoff_series: cutoffSeries
+    };
+    if (cond !== 0) firestoreDoc.rem_periods = rem_periods;
+
+    return {
+      firestoreDoc: firestoreDoc,
+      surveyData: {
+        rem_periods: rem_periods,
+        trains: roll.trains,
+        motionAvgs: motionAvgs
+      }
+    };
+  }
+
+  /** Night index for this participant (1-based), from condition rotation localStorage. */
+  function getNightNumberForSurvey(pid) {
+    try {
+      var raw = localStorage.getItem(getConditionStateKey(pid));
+      if (!raw) return '';
+      var cs = JSON.parse(raw);
+      if (cs && Array.isArray(cs.spent_conditions) && cs.spent_conditions.length > 0) {
+        return String(cs.spent_conditions.length);
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  /**
+   * Qualtrics URL: send scalar fields only (no JSON payloads).
+   */
+  function openWakeSurveyIfConfigured(sessionDoc, surveyData) {
+    if (!luciWakeSurveyUrl) return;
+    try {
+      surveyData = surveyData || {};
+      var periods = sessionDoc.rem_periods || surveyData.rem_periods || [];
+      var g = sessionDoc.general || {};
+      var pid = String(sessionDoc.participant_id || '');
+      var params = new URLSearchParams();
+      var nn = g.night_number != null ? String(g.night_number) : getNightNumberForSurvey(pid);
+
+      params.set('pid', pid);
+      params.set('condition', g.condition != null ? String(g.condition) : '');
+      params.set('night_number', nn);
+      params.set('rem_minutes', g.rem_minutes != null ? String(g.rem_minutes) : '');
+      params.set('arousal_threshold', g.arousal_threshold != null ? String(g.arousal_threshold) : '');
+      params.set('arousal_reached_count', String(g.arousal_reached_count != null ? g.arousal_reached_count : 0));
+      params.set('induction_highest_volume', g.induction_highest_volume != null ? String(g.induction_highest_volume) : '');
+      params.set('wake_time', g.device_time_end || '');
+      params.set('rem_motion_avg', g.rem_motion_avg != null ? String(g.rem_motion_avg) : '');
+      if (g.motion_80pct_cutoff_first_4h != null) params.set('motion_80pct_cutoff_first_4h', String(g.motion_80pct_cutoff_first_4h));
+      params.set('rem_episode_count', g.rem_episode_count != null ? String(g.rem_episode_count) : String(periods.length));
+      params.set('app_version', String(g.app_version || 'luci2026'));
+      params.set('train_cap_reached_count', String(g.train_cap_reached_count != null ? g.train_cap_reached_count : 0));
+      params.set('total_trains_delivered', String(g.total_trains_delivered != null ? g.total_trains_delivered : 0));
+      params.set('first_train_start_time', g.first_train_start_time != null ? String(g.first_train_start_time) : '');
+      params.set('last_train_start_time', g.last_train_start_time != null ? String(g.last_train_start_time) : '');
+      params.set('device_time_start', g.device_time_start != null ? String(g.device_time_start) : '');
+
+      var base = luciWakeSurveyUrl;
+      var sep = base.indexOf('?') >= 0 ? '&' : '?';
+      var targetUrl = base + sep + params.toString();
+      var popup = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      // iOS webviews often block new-tab popups from async callbacks; force same-tab redirect.
+      if (!popup) window.location.assign(targetUrl);
+    } catch (e) {
+      console.warn('Wake survey URL:', e);
+    }
+  }
+
+  function sendSleepData(activeMode) {
+    if (!state.pid) return;
+
+    var built = buildSleepSessionPayload(activeMode);
+    var doc = built.firestoreDoc;
+    if (!db) {
+      showSnackbar('Not connected. Sending wake survey only.');
+      openWakeSurveyIfConfigured(doc, built.surveyData);
+      return;
+    }
+    if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
+      doc.server_timestamp = firebase.firestore.FieldValue.serverTimestamp();
+    }
+
+    db.collection('sleep_studies').doc(state.pid).collection('sessions').add(doc)
+      .then(function() {
+        state.motionSamplesForBackend = [];
+        state.soundLog = [];
+        console.log('Data synced to Firestore:', activeMode);
+        openWakeSurveyIfConfigured(doc, built.surveyData);
+      })
+      .catch(function(err) {
+        console.error(err);
+        showSnackbar('Sync Error: Check Connection');
+        openWakeSurveyIfConfigured(doc, built.surveyData);
+      });
+  }
+
+  function wakeUp() {
+    if (state.inRemEpisode && state.remEpisodeStartTime) {
+      var dur = state.secondsRecorded - state.remEpisodeStartSeconds;
+      var trains = state.currentEpisodeTrains ? state.currentEpisodeTrains.slice() : [];
+      if (trains.length) {
+        var last = trains[trains.length - 1];
+        if (last.disruptive && last.end_epoch_sec == null) {
+          last.end_epoch_sec = state.secondsRecorded;
+          last.duration_sec = state.secondsRecorded - last.disruptive.start_epoch_sec;
+        }
+      }
+      state.remEpisodes.push({
+        start_epoch_sec: state.remEpisodeStartSeconds,
+        duration_sec: dur,
+        device_time_start: state.remEpisodeStartTime,
+        trains: trains
+      });
+      state.inRemEpisode = false;
+      state.currentRemEpisodeEntryThreshold = null;
+    }
+    disableNoSleep();
+    if (state.accelHandler) {
+      window.removeEventListener('devicemotion', state.accelHandler);
+      state.accelHandler = null;
+    }
+    if (state.motionSampleTimer) clearInterval(state.motionSampleTimer);
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    state.timerInterval = null;
+    state.fakeRemTestActive = false;
+    if (state.fakeRemTestTimeoutId) {
+      clearTimeout(state.fakeRemTestTimeoutId);
+      state.fakeRemTestTimeoutId = null;
+    }
+    state.fakeTestSequenceActive = false;
+    if (nextTrainTimeoutId) { clearTimeout(nextTrainTimeoutId); nextTrainTimeoutId = null; }
+    clearDisruptiveTimeouts();
+    cancelScheduledCue();
+    stopSound();
+    sendSleepData('wake_final');
+    state.appStep = 0;
+    state._voiceCheckDone = false;
+    state.epochs = 0;
+    state.totalStimCount = 0;
+    render();
+  }
+
+  function applyConfigData(pid, data) {
+    state.pid = pid;
+    state.keyword = DEFAULT_CUE_KEYWORD;
+    state.soundType = DEFAULT_CUE_SOUND_TYPE;
+    state.beepFrequencyHz = DEFAULT_BEEP_FREQUENCY_HZ;
+    state.beepDurationMs = DEFAULT_BEEP_DURATION_MS;
+    state.intervalSeconds = Number(data.interval) || 10;
+    state.baseStartVolume = 0.01;
+    ensureConditionForTonight(pid);
+    state.appStep = 1;
+    state.lastSession = null;
+    render();
+    fetchLastSession(pid);
+    setTimeout(checkNativeApisOnLogin, 800);
+  }
+
+  function fetchLastSession(pid) {
+    function applyLast(session) {
+      state.lastSession = session;
+      render();
+    }
+    if (!db) { applyLast(null); return; }
+    var sessionsRef = db.collection('sleep_studies').doc(pid).collection('sessions');
+    sessionsRef.orderBy('general.device_time_end', 'desc').limit(1).get()
+      .catch(function() {
+        // Backward compatibility for older docs that only have root device_time_end/device_time.
+        return sessionsRef.orderBy('device_time_end', 'desc').limit(1).get();
+      })
+      .catch(function() {
+        // Older legacy docs.
+        return sessionsRef.orderBy('device_time', 'desc').limit(1).get();
+      })
+      .then(function(snap) {
+        if (snap.empty) applyLast(null);
+        else {
+          var d = snap.docs[0].data();
+          var remCount, totalMin, dt;
+          if (d.general) {
+            var periods = d.rem_periods || [];
+            remCount = d.general.rem_episode_count != null ? d.general.rem_episode_count : periods.length;
+            totalMin = d.general.rem_minutes != null ? d.general.rem_minutes : 0;
+            if (totalMin === 0 && remCount > 0 && periods.length > 0) {
+              totalMin = periods.reduce(function(s, ep) {
+                return s + Math.round((ep.duration_sec || 0) / 60);
+              }, 0);
+            }
+            dt = d.general.device_time_end || d.device_time_end || d.device_time || d.general.wake_time;
+          } else {
+            var periods = Array.isArray(d.rem_periods) ? d.rem_periods : (d.rem_episodes || []);
+            remCount = periods.length;
+            totalMin = d.total_rem_minutes != null ? d.total_rem_minutes : 0;
+            if (totalMin === 0 && remCount > 0) {
+              totalMin = periods.reduce(function(s, ep) {
+                return s + (ep.duration_minutes != null ? ep.duration_minutes : Math.round((ep.duration_sec || 0) / 60));
+              }, 0);
+            }
+            dt = d.device_time_end || d.device_time;
+          }
+          var totalHrs = totalMin / 60;
+          applyLast({
+            device_time_end: dt || d.device_time_end || d.device_time || '',
+            total_rem_minutes: totalMin,
+            total_rem_hours: totalHrs,
+            rem_episode_count: remCount
+          });
+        }
+      })
+      .catch(function() { applyLast(null); });
+  }
+
+  function savePastedLabConfig(jsonText) {
+    try {
+      var config = JSON.parse(jsonText);
+      if (!config || !config.apiKey) { showSnackbar('Invalid config: need at least apiKey'); return; }
+      localStorage.setItem(LAB_CONFIG_KEY, JSON.stringify(config));
+      showSnackbar('Lab config saved. Reloading…');
+      window.location.reload();
+    } catch (e) { showSnackbar('Invalid JSON: ' + (e.message || 'parse error')); }
+  }
+
+  function fetchConfig() {
+    const pid = (document.getElementById('pidInput') || pidInput).value.trim();
+    if (!pid) return;
+
+    if (!db) {
+      showSnackbar('Connect to your lab first (open the link from your researcher).');
+      return;
+    }
+    applyConfigData(pid, { interval: 10 });
+  }
+
+  function render() {
+    const container = document.getElementById('stepContent');
+    if (!container) return;
+    if (container.classList && container.classList.toggle) {
+      container.classList.toggle('training-layout', state.appStep === 'training');
+    }
+
+    function el(tag, attrs, children) {
+      const e = document.createElement(tag);
+      if (attrs) for (const k in attrs) {
+        if (k === 'className') e.className = attrs[k];
+        else if (k === 'onClick') e.addEventListener('click', attrs[k]);
+        else if (k === 'style') Object.assign(e.style, attrs[k]);
+        else e.setAttribute(k, attrs[k]);
+      }
+      if (children) children.forEach(function(c) { e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+      return e;
+    }
+
+    container.innerHTML = '';
+
+    if (state.appStep !== 3 && state._volumeWatchActive) {
+      state._volumeWatchActive = false;
+      clearVolumeWatch();
+    }
+    if (state.appStep !== 'training' && state.trainingActive) {
+      stopTrainingPhase();
+    }
+
+    switch (state.appStep) {
+      case -1: {
+        container.appendChild(el('p', { className: 'text-title' }, ['Lab setup']));
+        container.appendChild(el('p', { className: 'text-body' }, [
+          'To connect to your lab\'s database, open the link (or scan the QR code) your researcher sent you in this browser. The app will then use your lab\'s Firebase for this device.'
+        ]));
+        container.appendChild(el('p', { className: 'text-body', style: { marginTop: '12px', fontSize: '0.9rem' } }, [
+          'If you have a Firebase config JSON from your lab, you can paste it below.'
+        ]));
+        var ta = document.createElement('textarea');
+        ta.placeholder = 'Paste Firebase config JSON here (e.g. { "apiKey": "...", "projectId": "...", ... })';
+        ta.rows = 4;
+        ta.style.width = '100%';
+        ta.style.marginTop = '8px';
+        ta.style.padding = '8px';
+        ta.style.boxSizing = 'border-box';
+        container.appendChild(ta);
+        container.appendChild(el('div', { style: { height: '12px' } }));
+        container.appendChild(el('button', { className: 'btn', onClick: function() { savePastedLabConfig(ta.value); } }, ['Save and connect']));
+        break;
+      }
+      case 0: {
+        container.appendChild(el('p', { className: 'text-title' }, ['Enter Participant ID']));
+        const input = pidInput.cloneNode(true);
+        input.value = state.pid;
+        input.id = 'pidInput';
+        container.appendChild(input);
+        container.appendChild(el('div', { style: { height: '30px' } }));
+        const btn = el('button', { className: 'btn', onClick: fetchConfig }, ['Load Settings']);
+        container.appendChild(btn);
+        break;
+      }
+      case 1: {
+        if (!state._voiceCheckDone) {
+          state._voiceCheckDone = true;
+          hasVoiceForPid(state.pid, function(has) { state.hasVoiceRecording = has; render(); });
+        }
+        container.appendChild(el('p', { className: 'text-title' }, ['Record your cue']));
+        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line', textAlign: 'left' } }, [
+          'Record a short sentence (2–4 seconds), for example: "I am dreaming."\n\nTap Record, then speak clearly. Stop when done.'
+        ]));
+        if (state.hasVoiceRecording) {
+          container.appendChild(el('button', { className: 'btn', onClick: function() { state.appStep = 'training'; state._voiceCheckDone = false; state.trainingComplete = false; render(); } }, ['Use existing recording']));
+          container.appendChild(el('div', { style: { height: '8px' } }));
+          container.appendChild(el('button', { className: 'btn', onClick: function() { state._recordingAgain = true; state.hasVoiceRecording = false; state._voiceCheckDone = true; render(); } }, ['Record again (replaces previous)']));
+        } else {
+          var recDiv = document.createElement('div');
+          recDiv.id = 'voiceRecDiv';
+          recDiv.className = 'voice-rec-block';
+          var recRow = document.createElement('div');
+          recRow.className = 'voice-rec-row';
+          var recBtn = el('button', { className: 'btn', id: 'voiceRecBtn' }, ['Record (2–4 s)']);
+          var stopBtn = el('button', { className: 'btn btn-red', id: 'voiceStopBtn', style: { display: 'none' } }, ['Stop']);
+          var recDuration = document.createElement('span');
+          recDuration.id = 'voiceDuration';
+          recDuration.className = 'voice-duration';
+          recDuration.textContent = '0.0 s';
+          recRow.appendChild(recBtn);
+          recRow.appendChild(stopBtn);
+          recRow.appendChild(recDuration);
+          recDiv.appendChild(recRow);
+          container.appendChild(recDiv);
+          (function() {
+            var mediaRecorder = null;
+            var chunks = [];
+            var startTs = 0;
+            var durationInterval = null;
+            function updateDuration() {
+              var el = document.getElementById('voiceDuration');
+              if (!el) return;
+              var sec = ((Date.now() - startTs) / 1000).toFixed(1);
+              el.textContent = sec + ' s';
+              if (Date.now() - startTs >= VOICE_RECORD_MAX_MS) stopRecording();
+            }
+            function stopRecording() {
+              if (durationInterval) clearInterval(durationInterval);
+              durationInterval = null;
+              if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            }
+            function onRecordClick() {
+              if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showSnackbar('Microphone not supported.');
+                return;
+              }
+              navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+                mediaRecorder = new MediaRecorder(stream);
+                chunks = [];
+                mediaRecorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
+                mediaRecorder.onstop = function() {
+                  stream.getTracks().forEach(function(t) { t.stop(); });
+                  var durationMs = Date.now() - startTs;
+                  if (durationMs < VOICE_RECORD_MIN_MS) {
+                    showSnackbar('Record at least 2 seconds.');
+                    var rb = document.getElementById('voiceRecBtn');
+                    var sb = document.getElementById('voiceStopBtn');
+                    if (rb) rb.style.display = '';
+                    if (sb) sb.style.display = 'none';
+                    return;
+                  }
+                  if (durationMs > VOICE_RECORD_MAX_MS + 50) {
+                    showSnackbar('Recording must be 4 seconds maximum.');
+                    var rb = document.getElementById('voiceRecBtn');
+                    var sb = document.getElementById('voiceStopBtn');
+                    if (rb) rb.style.display = '';
+                    if (sb) sb.style.display = 'none';
+                    return;
+                  }
+                  var blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                  setVoiceBlob(state.pid, blob, function(ok) {
+                    if (ok) {
+                      state.hasVoiceRecording = true;
+                      showSnackbar('Recording saved. Use it or record again.');
+                    } else showSnackbar('Could not save recording.');
+                    render();
+                  });
+                };
+                mediaRecorder.start();
+                startTs = Date.now();
+                durationInterval = setInterval(updateDuration, 200);
+                var rb = document.getElementById('voiceRecBtn');
+                var sb = document.getElementById('voiceStopBtn');
+                if (rb) rb.style.display = 'none';
+                if (sb) sb.style.display = '';
+              }).catch(function() { showSnackbar('Microphone access denied.'); });
+            }
+            function onStopClick() { stopRecording(); }
+            recBtn.onclick = onRecordClick;
+            stopBtn.onclick = onStopClick;
+          })();
+        }
+        break;
+      }
+      case 'training': {
+        startTrainingPhaseIfNeeded();
+        container.appendChild(el('p', { className: 'text-title' }, ['Praticing Lucidity']));
+        container.appendChild(el('p', { className: 'text-body', style: { marginBottom: '8px' } }, [
+          'Listen to the cues and practice recognizing the lucid reminder.'
+        ]));
+        var controls = document.createElement('div');
+        controls.className = 'training-controls';
+        var restartBtn = el('button', { className: 'icon-btn icon-btn-white', title: 'Restart from intro', onClick: restartTrainingFromBeginning }, ['↺']);
+        var wave = el('div', { className: 'training-wave' });
+        var pauseGlyph = state.trainingPaused
+          ? el('span', { className: 'play-glyph' }, [])
+          : el('span', { className: 'pause-glyph' }, [el('span', { className: 'bar' }, []), el('span', { className: 'bar' }, [])]);
+        var pauseBtn = el('button', { className: 'icon-btn icon-btn-red', title: state.trainingPaused ? 'Resume training' : 'Pause training', onClick: toggleTrainingPause }, [pauseGlyph]);
+        controls.appendChild(restartBtn);
+        controls.appendChild(wave);
+        controls.appendChild(pauseBtn);
+        container.appendChild(controls);
+        var remaining = Math.max(0, state.trainingRemainingSec || 0);
+        var min = Math.floor(remaining / 60);
+        var sec = String(remaining % 60).padStart(2, '0');
+        container.appendChild(el('p', { className: 'text-body', style: { color: 'var(--text-muted)', fontSize: '0.9rem' } }, [
+          'Time remaining: ' + String(min) + ':' + sec
+        ]));
+        container.appendChild(el('div', { style: { height: '6px' } }));
+        container.appendChild(el('button', { className: 'btn btn-red', onClick: skipTrainingPhase }, ['Skip training']));
+        break;
+      }
+      case 2: {
+        if (getMotionGranted(state.pid)) {
+          var savedBaseline = loadBaselineVolume(state.pid);
+          if (savedBaseline != null && savedBaseline > 0) {
+            state.userMinVolume = savedBaseline;
+            state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
+            state.finalSleepVolume = savedBaseline;
+            state.baselineSliderVolume = Math.min(1, Math.max(0.01, savedBaseline));
+            state.appStep = 4;
+          } else {
+            state.appStep = 3;
+            state.baselineSliderVolume = state.userMinVolume != null ? Math.min(1, Math.max(0.01, state.userMinVolume)) : 0.1;
+          }
+          render();
+          break;
+        }
+        container.appendChild(el('p', { className: 'icon-lg' }, ['🔐']));
+        if (state.lastSession) {
+          var dt = state.lastSession.device_time_end;
+          var dateStr = '';
+          if (dt) {
+            try {
+              var d = new Date(dt);
+              dateStr = isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+            } catch (e) {}
+          }
+          var lastLine = 'Last night: ' + (state.lastSession.rem_episode_count || 0) + ' REM episode(s), ' + (state.lastSession.total_rem_minutes != null ? state.lastSession.total_rem_minutes : 0) + ' min total REM';
+          if (dateStr) lastLine += ' (' + dateStr + ')';
+          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '8px' } }, [lastLine]));
+          container.appendChild(el('div', { className: 'divider' }));
+        }
+        container.appendChild(el('p', { className: 'text-title', style: { color: 'var(--orange-accent)', fontWeight: 'bold' } }, ['IMPORTANT: Your screen must stay ON.']));
+        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.']));
+        container.appendChild(el('div', { className: 'divider' }));
+        container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));
+        container.appendChild(el('div', { style: { height: '40px' } }));
+        container.appendChild(el('button', { className: 'btn', onClick: handleStartSequence }, ['Allow motion sensor']));
+        break;
+      }
+      case 3: {
+        container.appendChild(el('p', { className: 'text-body', style: { marginBottom: '12px' } }, [
+          'Set your phone volume to approximately 50% (you can use physical buttons or the Control Center slider), then click Continue.'
+        ]));
+        var initialVol = state.baselineSliderVolume != null ? Math.max(0, Math.min(1, state.baselineSliderVolume)) : 0.1;
+        state.baselineSliderVolume = initialVol;
+        var volumeBeepTimeout = null;
+        function applyVolumeChange(vol) {
+          vol = Math.max(0, Math.min(1, vol != null ? vol : 0));
+          state.baselineSliderVolume = vol;
+          if (volumeBeepTimeout) clearTimeout(volumeBeepTimeout);
+          volumeBeepTimeout = setTimeout(function() {
+            volumeBeepTimeout = null;
+            playBeep(vol, state.beepFrequencyHz, state.beepDurationMs || 150);
+          }, 200);
+        }
+        container.appendChild(el('div', { style: { height: '8px' } }));
+        container.appendChild(el('button', { className: 'btn btn-green', onClick: setBaseline }, ['Continue']));
+        var VP = getVolumePlugin();
+        if (VP && !state._volumeWatchActive) {
+          state._volumeWatchActive = true;
+          // Keep normal system volume behavior on hardware buttons.
+          var options = { suppressVolumeIndicator: false, disableSystemVolumeHandler: false };
+          // New plugin API: watchVolume(options, callback)
+          if (VP.watchVolume) {
+            VP.watchVolume(options, function(a, b) {
+              // Support both callback shapes: (result, err) and (err, result)
+              var err = null;
+              var ev = null;
+              if (a && (a.direction || typeof a.value === 'number')) {
+                ev = a;
+                err = b;
+              } else if (b && (b.direction || typeof b.value === 'number')) {
+                ev = b;
+                err = a;
+              } else {
+                ev = a || b || null;
+              }
+              if (err) return;
+              if (ev && ev.direction) {
+                var delta = ev.direction === 'up' ? CALIBRATION_VOLUME_STEP : -CALIBRATION_VOLUME_STEP;
+                var next = Math.max(0, Math.min(1, (state.baselineSliderVolume != null ? state.baselineSliderVolume : initialVol) + delta));
+                applyVolumeChange(next);
+                return;
+              }
+              if (ev && typeof ev.value === 'number') {
+                applyVolumeChange(ev.value);
+              }
+            }).catch(function() { state._volumeWatchActive = false; });
+          } else {
+            state._volumeWatchActive = false;
+          }
+        }
+        break;
+      }
+      case 4: {
+        container.appendChild(el('p', { className: 'text-body' }, [
+          'All set! We\'re ready for you to go to sleep. Place the phone facedown on the bed with the screen on and keep it connected to the charger.'
+        ]));
+        container.appendChild(el('div', { style: { height: '24px' } }));
+        if (!state.hasVoiceRecording) {
+          hasVoiceForPid(state.pid, function(has) { if (has) { state.hasVoiceRecording = true; render(); } });
+        }
+        var startBtn = el('button', { className: 'btn btn-green', onClick: activateMotionAndStartSleep }, ['Start sleep']);
+        if (!state.hasVoiceRecording) {
+          startBtn.disabled = true;
+          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.85rem', color: 'var(--orange-accent)', marginTop: '6px' } }, ['Record your cue (step 1) before starting sleep.']));
+        }
+        container.appendChild(startBtn);
+        break;
+      }
+      case 5: {
+        container.appendChild(el('p', { className: 'text-body' }, [
+          'When you wake up tap the button below.'
+        ]));
+        container.appendChild(el('p', { style: { color: 'var(--green-accent)', fontSize: '1.25rem' } }, ['🌙 Tracking Active']));
+        var phaseLabel = state.trainPhase === 'disruptive'
+          ? 'Disruptive'
+          : state.trainPhase === 'induction'
+          ? 'Induction'
+          : 'Idle';
+        container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--primary-accent)', marginTop: '4px' } }, [
+          'Current phase: ' + phaseLabel
+        ]));
+        if (state.trainPhase === 'induction') {
+          var inductionPct = Math.round((Math.min(state.inductionCap || 1, state.inductionVolume || 0) || 0) * 100);
+          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '2px' } }, [
+            'Induction volume: ' + String(inductionPct) + '%'
+          ]));
+        }
+        if (state.tonight_condition != null) {
+          var conditionName = CONDITION_LABELS[state.tonight_condition] || ('Condition ' + String(state.tonight_condition));
+          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '4px' } }, [
+            'Condition: ' + conditionName + ' (' + String(state.tonight_condition) + ')'
+          ]));
+        }
+        if (ENABLE_FAKE_REM_TEST) {
+          var remToFake = Math.max(0, FAKE_REM_TRIGGER_AFTER_SEC - (state.secondsRecorded || 0));
+          var fakeMsg = state.fakeRemTestActive
+            ? 'TEMP TEST REM status: started'
+            : ('TEMP TEST REM starts in: ' + String(remToFake) + 's');
+          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--orange-accent)', marginTop: '4px' } }, [fakeMsg]));
+        }
+        var elapsedSec = state.secondsRecorded || 0;
+        var elapsedStr = Math.floor(elapsedSec / 3600) + ':' + String(Math.floor((elapsedSec % 3600) / 60)).padStart(2, '0') + ':' + String(elapsedSec % 60).padStart(2, '0');
+        container.appendChild(el('p', { id: 'sleepTimer', style: { fontFamily: 'monospace', fontSize: '1.1rem', marginTop: '8px', color: 'var(--primary-accent)' } }, ['Elapsed: ' + elapsedStr]));
+        container.appendChild(el('div', { className: 'spinner' }));
+        container.appendChild(el('div', { style: { height: '24px' } }));
+        container.appendChild(el('button', { className: 'btn btn-red', onClick: wakeUp }, ["I'm awake"]));
+        break;
+      }
+      default:
+        container.appendChild(el('p', {}, ['Error']));
+    }
+  }
+
+  function runWhenReady() {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', runWhenReady);
+      return;
+    }
+    render();
+  }
+  runWhenReady();
+})();
+  </script>
+</body>
+</html>

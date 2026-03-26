@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LuciDreams</string>
+    <string name="title_activity_main">LuciDreams</string>
+    <string name="package_name">io.lucidreams.cap</string>
+    <string name="custom_url_scheme">io.lucidreams.cap</string>
+</resources>

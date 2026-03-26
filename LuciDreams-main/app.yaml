@@ -1,0 +1,13 @@
+runtime: python311
+
+instance_class: F1
+entrypoint: gunicorn -b :$PORT main:app
+
+handlers:
+- url: /res
+  static_dir: static
+
+- url: /.*
+  secure: always
+  redirect_http_response_code: 301
+  script: auto

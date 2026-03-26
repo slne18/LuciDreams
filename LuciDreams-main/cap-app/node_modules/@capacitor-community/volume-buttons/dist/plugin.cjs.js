@@ -1,0 +1,30 @@
+'use strict';
+
+Object.defineProperty(exports, '__esModule', { value: true });
+
+var core = require('@capacitor/core');
+
+const VolumeButtons = core.registerPlugin('VolumeButtons', {
+    web: () => Promise.resolve().then(function () { return web; }).then(m => new m.VolumeButtonsWeb())
+});
+
+class VolumeButtonsWeb extends core.WebPlugin {
+    async isWatching() {
+        throw new Error('VolumeButtons is not supported on web');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async watchVolume(_options, _callback) {
+        throw new Error('VolumeButtons is not supported on web');
+    }
+    async clearWatch() {
+        throw new Error('VolumeButtons is not supported on web');
+    }
+}
+
+var web = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    VolumeButtonsWeb: VolumeButtonsWeb
+});
+
+exports.VolumeButtons = VolumeButtons;
+//# sourceMappingURL=plugin.cjs.js.map

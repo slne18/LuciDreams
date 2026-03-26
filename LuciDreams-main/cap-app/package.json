@@ -1,0 +1,29 @@
+{
+  "name": "luci-dreams-cap",
+  "version": "1.0.0",
+  "description": "Capacitor wrapper for LuciDreams – flashlight, vibration, native audio on iOS",
+  "scripts": {
+    "build": "node copy-web.js",
+    "cap:sync": "npm run build && npx cap sync",
+    "ios": "npx cap open ios",
+    "copy-web": "node copy-web.js"
+  },
+  "dependencies": {
+    "@capacitor-community/native-audio": "^6.0.0",
+    "@capacitor-community/volume-buttons": "^6.0.1",
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/filesystem": "^6.0.1",
+    "@capacitor/haptics": "^6.0.1",
+    "@capacitor/ios": "^6.1.2",
+    "@capawesome/capacitor-torch": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  },
+  "capacitor": {
+    "ios": {
+      "path": "ios"
+    }
+  }
+}
