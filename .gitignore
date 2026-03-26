@@ -4,3 +4,21 @@
 ## Service account credentials (never commit secrets)
 lucidreans-firebase-adminsdk-fbsvc-4b27ed98c4.json
 **/*firebase-adminsdk*.json
+
+## Local environment and secrets
+.env
+.env.*
+*.pem
+*.p12
+*secret*.json
+*credentials*.json
+
+## Firebase local config (contains API key/project identifiers)
+LuciDreams-main/static/firebase-config.js
+LuciDreams-main/cap-app/www/static/firebase-config.js
+
+## Python virtual environments / caches
+.venv/
+**/.venv/
+__pycache__/
+*.pyc
