@@ -782,6 +782,7 @@
     disruptiveTimeouts: [],    // timeouts to clear when train ends
     inductionVolume: 0.1,
     inductionCap: 1,           // induction climbs until arousal or 100%
+    nextTrainInductionCap: null, // one-shot cap for next train after arousal (95% of threshold)
     lastInductionPlayEpoch: null,
     currentEpisodeTrains: [],  // { disruptive: {}, induction: { cues: [], arousal_threshold } }
     fakeRemTestActive: false,
@@ -1015,8 +1016,9 @@
       if (c === 6 || c === 7) stopSound();
       state.trainPhase = 'induction';
       state.inductionVolume = getInductionStartVolume();
-      // Induction cues always ramp from 10% by +10% until arousal or 100%.
-      state.inductionCap = 1;
+      // After arousal in previous train, next train is capped at 95% of that arousal.
+      // Otherwise cap remains full range (1.0).
+      state.inductionCap = consumeNextInductionCap();
       state.lastInductionPlayEpoch = null;
       if (c === 0) {
         endTrain(false);
@@ -1101,6 +1103,7 @@
         state.fakeTestConditionIndex++;
         state.tonight_condition = state.fakeTestConditions[state.fakeTestConditionIndex];
         state.inductionCap = 1;
+        state.nextTrainInductionCap = null;
         if (state.appStep === 5 && state.inRemEpisode && state.trainPhase === null) startTrain();
       } else {
         state.fakeTestSequenceActive = false;
@@ -1402,6 +1405,16 @@
   }
   function getInductionStartVolume() {
     return LD_INDUCTION_START_VOLUME;
+  }
+  function consumeNextInductionCap() {
+    var startVol = getInductionStartVolume();
+    var cap = 1;
+    if (state.nextTrainInductionCap != null && state.nextTrainInductionCap > 0) {
+      cap = Math.max(startVol, Math.min(1, state.nextTrainInductionCap));
+    }
+    // apply only to immediate next train
+    state.nextTrainInductionCap = null;
+    return cap;
   }
   function getNextInductionVolume(currentVol) {
     var levels = INDUCTION_VOLUME_LEVELS || [];
@@ -2090,6 +2103,7 @@ function playFixedBeep75(durationMs, onEnded) {
         state.currentRemEpisodeEntryThreshold = null;
         state.trainPhase = null;
         state.trainStartEpoch = null;
+        state.nextTrainInductionCap = null;
         state.lastInductionPlayEpoch = null;
         clearDisruptiveTimeouts();
         if (nextTrainTimeoutId) { clearTimeout(nextTrainTimeoutId); nextTrainTimeoutId = null; }
@@ -2106,6 +2120,8 @@ function playFixedBeep75(durationMs, onEnded) {
             train.induction.cues[train.induction.cues.length - 1].arousal_detected = true;
             train.induction.arousal_threshold = state.inductionVolume;
             state.arousal_threshold = state.inductionVolume;
+            // Next train in this REM episode: cap induction at 95% of the arousal volume.
+            state.nextTrainInductionCap = Math.max(getInductionStartVolume(), Math.min(1, state.inductionVolume * 0.95));
             saveArousalThreshold(state.arousal_threshold);
             console.log('Arousal threshold set:', state.arousal_threshold);
           }
@@ -2128,6 +2144,7 @@ function playFixedBeep75(durationMs, onEnded) {
           state.currentRemEpisodeEntryThreshold = movementNoiseFloor;
           state.inRemEpisode = true;
           state.currentEpisodeTrains = [];
+          state.nextTrainInductionCap = null;
           state.lastCueEpoch = 0;
           if (state.tonight_condition !== 0 && !hasReachedNightTrainCap() && !hasReachedEpisodeTrainCap()) startTrain();
         }
@@ -2309,6 +2326,7 @@ function playFixedBeep75(durationMs, onEnded) {
     state.disruptiveTimeouts = [];
     state.inductionVolume = getInductionStartVolume();
     state.inductionCap = 1;
+    state.nextTrainInductionCap = null;
     state.fakeRemTestActive = false;
     if (state.fakeRemTestTimeoutId) {
       clearTimeout(state.fakeRemTestTimeoutId);
@@ -2605,7 +2623,8 @@ function playFixedBeep75(durationMs, onEnded) {
 
     var roll = computeStimulationRollups(rem_periods);
     var first4hStillnessCutoff = getFirst4hSeriesStillnessCutoff();
-    var cutoffSeries = (state.motion80pctCutoffSeries || []).slice();
+    // Persist per-second motion amount (not 80th-percentile cutoff series).
+    var motionSeries = (state.motionSamplesForBackend || []).slice();
 
     var general = {
       session_type: activeMode,
@@ -2635,7 +2654,7 @@ function playFixedBeep75(durationMs, onEnded) {
       general: general
     };
     firestoreDoc.rem_dynamic_thresholds = {
-      motion_80pct_cutoff_series: cutoffSeries
+      motion_per_second_series: motionSeries
     };
     if (cond !== 0) firestoreDoc.rem_periods = rem_periods;
 

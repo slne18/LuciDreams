@@ -22,3 +22,6 @@ LuciDreams-main/cap-app/www/static/firebase-config.js
 **/.venv/
 __pycache__/
 *.pyc
+
+## Local EEG raw exports
+plot/EEG_*.csv
