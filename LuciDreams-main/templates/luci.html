@@ -335,6 +335,7 @@
 
   <script src="{{ url_for('static', filename='NoSleep.js') }}"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
   <script src="{{ url_for('static', filename='firebase-config.js') }}"></script>
   <script>
@@ -640,6 +641,23 @@
     var effectiveConfig = getEffectiveFirebaseConfig();
     if (effectiveConfig && typeof firebase !== 'undefined') {
       firebase.initializeApp(effectiveConfig);
+      if (firebase.auth) {
+        var auth = firebase.auth();
+        if (auth.currentUser) {
+          console.log('Firebase anonymous auth: already signed in', auth.currentUser.uid);
+        } else {
+          auth.signInAnonymously()
+            .then(function(res) {
+              var uid = res && res.user ? res.user.uid : '(unknown)';
+              console.log('Firebase anonymous auth: signed in', uid);
+            })
+            .catch(function(err) {
+              console.warn('Firebase anonymous auth failed:', err);
+            });
+        }
+      } else {
+        console.warn('Firebase auth SDK not available; anonymous sign-in skipped.');
+      }
       db = firebase.firestore();
     }
   } catch (e) { console.warn('Firebase init:', e); }

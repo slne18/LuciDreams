@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot EEG by REM phase (similar layout to rem_trigger_dynamics).
+Plot EEG by REM phase.
 
 For each REM episode (optionally only those with both disruptive+induction cues):
 - x-axis: clock time during the REM phase
