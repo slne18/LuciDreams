@@ -385,6 +385,7 @@
   window.luciNativeLongAssetPaths = {};
   window.luciNativeLongAssetIsUrl = {};
   window.luciNativeAudioLastError = '';
+  // Returns closest beep variant volume.
   function getClosestBeepVariantVolume(vol) {
     var levels = window.luciNativeBeepVariantVolumes || [];
     if (!levels.length) return Math.max(0, Math.min(1, vol || 0));
@@ -400,15 +401,18 @@
     }
     return best;
   }
+  // Returns beep variant asset id.
   function getBeepVariantAssetId(vol) {
     var stepped = getClosestBeepVariantVolume(vol);
     return 'beep_v' + String(Math.round(stepped * 100));
   }
+  // Stops native beep variants.
   function stopNativeBeepVariants(NA) {
     (window.luciNativeBeepVariantVolumes || []).forEach(function(v) {
       NA.stop({ assetId: getBeepVariantAssetId(v) }).catch(function() {});
     });
   }
+  // Ensures native beep variants preloaded.
   function ensureNativeBeepVariantsPreloaded() {
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
@@ -441,6 +445,7 @@
     });
     return window.luciNativeBeepVariantsPromise;
   }
+  // Ensures native beep preloaded.
   function ensureNativeBeepPreloaded() {
     var Cap = window.Capacitor;
     var NativeAudio = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
@@ -450,6 +455,7 @@
     if (window.luciNativeBeepPreloaded) return Promise.resolve(true);
     if (window.luciNativeAudioPreloadPromise) return window.luciNativeAudioPreloadPromise;
     var candidates = ['public/sounds/beep.wav'];
+    // Handles mark preloaded.
     function markPreloaded(srcLabel, assetPath, isUrl) {
       window.luciNativeBeepPreloaded = true;
       window.luciUseNativeAudio = true;
@@ -460,11 +466,13 @@
       console.log('NativeAudio preloaded from:', srcLabel);
       return true;
     }
+    // Handles remember audio error.
     function rememberAudioError(stage, err) {
       var msg = err && (err.message || err.error || err.localizedDescription || String(err)) || 'unknown';
       window.luciNativeAudioLastError = stage + ': ' + msg;
       console.warn('NativeAudio error [' + stage + ']:', err);
     }
+    // Handles array buffer to base64.
     function arrayBufferToBase64(buffer) {
       var bytes = new Uint8Array(buffer);
       var chunkSize = 0x8000;
@@ -475,6 +483,7 @@
       }
       return btoa(binary);
     }
+    // Handles preload from web asset to cache.
     function preloadFromWebAssetToCache() {
       var FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
       if (!FS || typeof fetch !== 'function') return Promise.resolve(false);
@@ -510,6 +519,7 @@
           return false;
         });
     }
+    // Handles preload candidate.
     function preloadCandidate(idx) {
       if (idx >= candidates.length) return preloadFromWebAssetToCache();
       var p = candidates[idx];
@@ -526,6 +536,7 @@
     });
     return window.luciNativeAudioPreloadPromise;
   }
+  // Ensures native long asset preloaded.
   function ensureNativeLongAssetPreloaded(assetId, filename, preloadVolume) {
     var Cap = window.Capacitor;
     var NativeAudio = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
@@ -535,16 +546,19 @@
     if (window.luciNativeLongAssetPaths[assetId]) return Promise.resolve(true);
     if (window.luciNativeLongAssetPromises[assetId]) return window.luciNativeLongAssetPromises[assetId];
     var candidates = ['public/sounds/' + filename];
+    // Handles remember audio error.
     function rememberAudioError(stage, err) {
       var msg = err && (err.message || err.error || err.localizedDescription || String(err)) || 'unknown';
       window.luciNativeAudioLastError = stage + ': ' + msg;
       console.warn('NativeAudio error [' + stage + ']:', err);
     }
+    // Handles mark preloaded.
     function markPreloaded(path, isUrl) {
       window.luciNativeLongAssetPaths[assetId] = path;
       window.luciNativeLongAssetIsUrl[assetId] = !!isUrl;
       return true;
     }
+    // Handles array buffer to base64.
     function arrayBufferToBase64(buffer) {
       var bytes = new Uint8Array(buffer);
       var chunkSize = 0x8000;
@@ -556,6 +570,7 @@
       return btoa(binary);
     }
     var fixedVol = (typeof preloadVolume === 'number') ? Math.max(0, Math.min(1, preloadVolume)) : null;
+    // Handles preload from web asset to cache.
     function preloadFromWebAssetToCache() {
       var FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
       if (!FS || typeof fetch !== 'function') return Promise.resolve(false);
@@ -590,6 +605,7 @@
           return false;
         });
     }
+    // Handles preload candidate.
     function preloadCandidate(idx) {
       if (idx >= candidates.length) return preloadFromWebAssetToCache();
       var p = candidates[idx];
@@ -625,6 +641,7 @@
     if (NativeAudio && typeof NativeAudio.preload === 'function') ensureNativeBeepPreloaded();
   })();
 
+  // Returns effective firebase config.
   function getEffectiveFirebaseConfig() {
     if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
       return window.FIREBASE_CONFIG;
@@ -662,18 +679,15 @@
     }
   } catch (e) { console.warn('Firebase init:', e); }
 
-  // --- EXPERIMENT PARAMETERS (from Flutter) ---
+  // --- EXPERIMENT PARAMETERS ---
   const BUFFER_SIZE = 800;
   const SIG_MOTION = 0.1;
   const REM_GATE_SECONDS = 14400;   // 4 hours before REM detection runs
   const REM_SMOOTH_WINDOW_SEC = 180; // Rolling mean over last 180 seconds (updated every second)
-  const REM_STILLNESS_PERCENT_OF_SERIES_MEAN = 0.8; // Still if current rolling mean is lower than >=80% of first-4h rolling values
-  // REM Episode Manager (refined)
-  const POTENTIAL_REM_STILLNESS_SEC = 0;      // REM entry is based on current rolling-window stillness only (no extra stillness delay)
-  const CUE_DELIVERY_STILLNESS_SEC = 0;       // No extra wait after stillness gate
-  /** Hard cap on stimulation trains for the entire night (all REM episodes combined). Not per REM period. */
+  const REM_STILLNESS_PERCENT_OF_SERIES_MEAN = 0.8; // Stillness percentile against the evolving current smoothed-motion series
+  // REM Episode Manager
   const NIGHT_MAX_TRAINS = 10;
-  const REM_EPISODE_MAX_TRAINS = 5;           // Per-REM-episode cap (night cap still enforced separately)
+  const REM_EPISODE_MAX_TRAINS = 5;           // Per-REM-episode cap 
   const REFRACTORY_PERIOD_SEC = 300;          // 5 min between trains
   const AROUSAL_CHECK_WINDOW_SEC = 5;          // Movement within 5s after induction cue (raw motion; for arousal only)
   const MOVEMENT_DURATION_FOR_AROUSAL = 2;    // Require 2s movement for arousal (kept: responsive to cue reaction)
@@ -681,11 +695,10 @@
   const CALIBRATION_VOLUME_STEP = 1 / 16; // iOS hardware volume increments are typically 16 steps
   // --- TEMP TEST HARNESS (delete this block when done) ---
   const ENABLE_FAKE_REM_TEST = false; // Disabled for normal sleep runs.
-  const FAKE_REM_TRIGGER_AFTER_SEC = 60; // Trigger fake REM after 1 minute
+  const FAKE_REM_TRIGGER_AFTER_SEC = 30; // Trigger fake REM after 30s 
   // --- END TEMP TEST HARNESS ---
   // One train = 2min disruptive + LD induction (until arousal)
   const DISRUPTIVE_PERIOD_SEC = 120;
-  const DISRUPTIVE_SOUND_VOLUME = 0.8;           // disruptive cue fixed at 80%
   const DISRUPTIVE_SOUND_DURATION_MS = 1500;    // disruptive beep lasts 1.5 seconds
   const DISRUPTIVE_SECOND_CUE_OFFSET_MS = 60000; // disruptive beep/vibration second cue at +60s
   const DISRUPTIVE_WAVE_VOLUME = 0.15;            // theta/gamma disruptive wave volume fixed at 15%
@@ -693,23 +706,17 @@
   const DISRUPTIVE_GAMMA_ASSET = 'gamma.mp3';
   const FIXED_BEEP_80_ASSET_ID = 'beep_v80';
   const FIXED_BEEP_75_ASSET_ID = 'beep_v75';
-  const FIXED_BEEP_100_ASSET_ID = 'beep_v100';
   const DISRUPTIVE_LIGHT_OFFSET_MS = 90000;   // 1m30 after train start
   const DISRUPTIVE_LIGHT_DURATION_MS = 30000; // 30s at 100%
   const DISRUPTIVE_VIBRATION_BURSTS = 3;      // 3 bursts each disruptive vibration event
   const DISRUPTIVE_VIBRATION_MS = 500;       // per burst
   const DISRUPTIVE_VIBRATION_GAP_MS = 1000;   // gap between bursts
   const LD_INDUCTION_START_VOLUME = 0.01;         // induction starts at 1%
-  const INDUCTION_VOLUME_LEVELS = [0.01, 0.02, 0.03, 0.05, 0.06, 0.08, 0.25, 0.5, 0.75, 1.0];
-  const LD_T0_BEEP_DURATION_MS = 200;
-  const LD_T2_BEEP_DURATION_MS = 200;
-  const DEFAULT_AROUSAL_SOUND = 0.5;          // fallback for legacy play helpers
-  const T0_VOLUME_BOOST = 0.2;                // legacy LD T0 boost
-  const DEFAULT_AROUSAL_VIBRATION_MS = 250;   // legacy triggerVibration default
+  // Induction sequence maps to beep files:
+  // beep_v1 -> beep_v2 -> beep_v3 -> beep_v5 -> beep_v8 -> beep_v25 -> beep_v50 -> beep_v75 -> beep_v100
+  const INDUCTION_VOLUME_LEVELS = [0.01, 0.02, 0.03, 0.05, 0.08, 0.25, 0.5, 0.75, 1.0];
+  const LD_BEEP_DURATION_MS = 200;
   // App-wide cue
-  const DEFAULT_CUE_KEYWORD = 'Bip';
-  const DEFAULT_CUE_SOUND_TYPE = 'keyword';
-  const DEFAULT_BEEP_FREQUENCY_HZ = 800;
   const DEFAULT_BEEP_DURATION_MS = 150;
   // 8-night rotating conditions:
   // 0=Control, 1=Sound+Bip, 2=Vibration+Bip, 3=Light+Bip, 4=Voice, 5=Beep,
@@ -739,17 +746,12 @@
 
   let state = {
     pid: '',
-    keyword: 'Bip',
-    soundType: 'keyword',
-    beepFrequencyHz: 800,
     beepDurationMs: 150,
     intervalSeconds: 10,
-    baseStartVolume: 0.01,
     appStep: 0,
     epochs: 0,
     soundRunning: false,
     totalStimCount: 0,
-    thresholdVolume: 0,
     finalSleepVolume: 0,
     motionHistory: [],
     summedMotion: [],
@@ -779,17 +781,13 @@
     lastRawX: 0, lastRawY: 0, lastRawZ: 0,
     accelHandler: null,
     motionSampleTimer: null,
-    autoSaveTimer: null,
-    soundHandle: null,
     disruptiveWaveAssetId: null,
     noSleep: null,
     sleepStartTime: null,
     timerInterval: null,
-    lastSession: null,
     consecutive_seconds_above_threshold: 0,
     userMinVolume: null,
     baselineSliderVolume: 0.1,
-    alarmTime: '',
     tonight_condition: null,
     hasVoiceRecording: false,
     // Arousal threshold (sound 0-1) from LD induction, persisted across nights
@@ -832,20 +830,15 @@
 
   if (!db) state.appStep = -1;
 
+  // Returns condition state key.
   function getConditionStateKey(pid) { return 'luci_condition_state_' + (pid || 'default'); }
-  function shuffle(arr) {
-    var a = arr.slice();
-    for (var i = a.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var t = a[i]; a[i] = a[j]; a[j] = t;
-    }
-    return a;
-  }
+  // Ensures condition for tonight.
   function ensureConditionForTonight(pid) {
     var key = getConditionStateKey(pid);
     var raw = null;
     try { raw = localStorage.getItem(key); } catch (e) {}
     var cs = raw ? JSON.parse(raw) : null;
+    // Handles pool is outdated.
     function poolIsOutdated(stateObj) {
       if (!stateObj || !Array.isArray(stateObj.current_cycle_pool) || !Array.isArray(stateObj.spent_conditions)) return true;
       var all = stateObj.current_cycle_pool.concat(stateObj.spent_conditions);
@@ -875,6 +868,7 @@
     state.tonight_condition = tonight;
   }
 
+  // Cancels scheduled cue.
   function cancelScheduledCue() {
     if (state.scheduledCueTimeoutId) {
       clearTimeout(state.scheduledCueTimeoutId);
@@ -883,13 +877,14 @@
     render();
   }
 
+  // Clears disruptive timeouts.
   function clearDisruptiveTimeouts() {
     (state.disruptiveTimeouts || []).forEach(function(id) { clearTimeout(id); });
     state.disruptiveTimeouts = [];
   }
 
   var nextTrainTimeoutId = null;
-  // --- TEMP TEST HARNESS (delete these helpers when done) ---
+  // --- TEMP TEST HARNESS ---
   function isFakeConditionSweepModeActive() {
     return !!(ENABLE_FAKE_REM_TEST && state.fakeRemTestActive && state.fakeTestSequenceActive);
   }
@@ -901,15 +896,17 @@
     var current = state.inRemEpisode ? ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) : 0;
     return finished + current;
   }
+  // Checks whether has reached night train cap.
   function hasReachedNightTrainCap() {
     if (isFakeConditionSweepModeActive()) return false;
     return totalNightTrainCount() >= NIGHT_MAX_TRAINS;
   }
+  // Checks whether has reached episode train cap.
   function hasReachedEpisodeTrainCap() {
     if (isFakeConditionSweepModeActive()) return false;
     return ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) >= REM_EPISODE_MAX_TRAINS;
   }
-  // --- TEMP TEST HARNESS (delete this function when done) ---
+  // --- TEMP TEST HARNESS  ---
   function setupTemporaryFakeRemForTesting() {
     if (!ENABLE_FAKE_REM_TEST) return;
     if (state.fakeRemTestTimeoutId) {
@@ -962,6 +959,7 @@
     }, REFRACTORY_PERIOD_SEC * 1000);
   }
 
+  // Stops disruptive wave noise.
   function stopDisruptiveWaveNoise() {
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
@@ -973,6 +971,7 @@
     NA.stop({ assetId: id }).catch(function() {});
     state.disruptiveWaveAssetId = null;
   }
+  // Starts disruptive wave noise.
   function startDisruptiveWaveNoise(waveHz, volume, trainRecord) {
     var cfg = waveHz === 8
       ? { assetId: 'theta_noise_15', filename: DISRUPTIVE_THETA_ASSET }
@@ -1012,6 +1011,7 @@
     });
   }
 
+  // Starts train.
   function startTrain() {
     state.trainStartEpoch = state.secondsRecorded;
     state.trainPhase = 'disruptive';
@@ -1103,6 +1103,7 @@
     render();
   }
 
+  // Handles end train.
   function endTrain(arousalReached) {
     var train = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
     if (train && train.disruptive) {
@@ -1142,6 +1143,7 @@
     render();
   }
 
+  // Plays own voice via html audio.
   function playOwnVoiceViaHtmlAudio(blob, volume, onEnded) {
     if (!blob) { if (onEnded) onEnded(); return; }
     var url = '';
@@ -1151,6 +1153,7 @@
       audio.volume = Math.max(0, Math.min(1, volume));
       var finished = false;
       var timeoutId = null;
+      // Handles done.
       function done() {
         if (finished) return;
         finished = true;
@@ -1183,6 +1186,7 @@
     var path = 'voice_temp' + ext;
     var dir = 1; // Directory.Cache (1) in Capacitor Filesystem
     var assetId = 'own_voice';
+    // Handles done.
     function done() {
       NA.unload({ assetId: assetId }).catch(function() {});
       FS.deleteFile({ path: path, directory: dir }).catch(function() {});
@@ -1202,6 +1206,7 @@
           NA.setVolume({ assetId: assetId, volume: Math.max(0, Math.min(1, volume)) }).catch(function() {});
           var finished = false;
           var timeoutId = null;
+          // Handles finish.
           function finish() {
             if (finished) return;
             finished = true;
@@ -1225,6 +1230,7 @@
     fr.onerror = function() { playOwnVoiceViaHtmlAudio(blob, volume, done); };
     fr.readAsDataURL(blob);
   }
+  // Returns voice step from volume.
   function getVoiceStepFromVolume(vol) {
     var target = Math.max(0, Math.min(1, vol || 0));
     var levels = INDUCTION_VOLUME_LEVELS || [0.1, 1.0];
@@ -1239,6 +1245,7 @@
     }
     return Math.round(best * 100);
   }
+  // Ensures voice variant blobs.
   function ensureVoiceVariantBlobs(pid, sourceBlob, cb) {
     if (!sourceBlob) { cb(null); return; }
     if (state.voiceVariantCachePid === pid && state.voiceVariantBlobs) {
@@ -1256,12 +1263,14 @@
         if (!len) { try { ctx.close(); } catch (e) {} cb(null); return; }
         var channels = [];
         for (var c = 0; c < ch; c++) channels.push(audioBuf.getChannelData(c));
+        // Handles encode wav with gain.
         function encodeWavWithGain(gain) {
           var bytesPerSample = 2;
           var blockAlign = ch * bytesPerSample;
           var dataSize = len * blockAlign;
           var buffer = new ArrayBuffer(44 + dataSize);
           var view = new DataView(buffer);
+          // Handles write str.
           function writeStr(off, s) { for (var i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); }
           writeStr(0, 'RIFF');
           view.setUint32(4, 36 + dataSize, true);
@@ -1303,6 +1312,7 @@
       });
     }).catch(function() { cb(null); });
   }
+  // Plays own voice at step.
   function playOwnVoiceAtStep(step, onEnded) {
     getVoiceBlob(state.pid, function(blob) {
       if (!blob) { if (typeof onEnded === 'function') onEnded(); return; }
@@ -1331,6 +1341,7 @@
     });
   }
 
+  // Plays induction cue.
   function playInductionCue() {
     var vol = Math.min(state.inductionCap, state.inductionVolume);
     var c = state.tonight_condition;
@@ -1350,18 +1361,22 @@
       if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'own_voice', type: 'T2', level: vol, info: 'custom recording step ' + String(step) });
       playOwnVoiceAtStep(step, function() { state.soundRunning = false; render(); });
     } else if (c === 5) {
-      playBeep(vol, state.beepFrequencyHz, LD_T2_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
+      playBeep(vol, LD_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
     } else {
-      playBeep(vol, state.beepFrequencyHz, LD_T0_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
+      playBeep(vol, LD_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
     }
     render();
   }
 
+  // Returns arousal threshold key.
   function getArousalThresholdKey() { return 'luci_arousal_threshold_' + (state.pid || 'default'); }
+  // Returns baseline volume key.
   function getBaselineVolumeKey(pid) { return 'luci_baseline_volume_' + (pid || 'default'); }
+  // Saves baseline volume.
   function saveBaselineVolume(pid, value) {
     try { localStorage.setItem(getBaselineVolumeKey(pid), String(value)); } catch (e) {}
   }
+  // Loads baseline volume.
   function loadBaselineVolume(pid) {
     try {
       var v = localStorage.getItem(getBaselineVolumeKey(pid));
@@ -1369,14 +1384,18 @@
     } catch (e) {}
     return null;
   }
+  // Returns motion granted key.
   function getMotionGrantedKey(pid) { return 'luci_motion_granted_' + (pid || 'default'); }
+  // Sets motion granted.
   function setMotionGranted(pid) {
     try { localStorage.setItem(getMotionGrantedKey(pid), '1'); } catch (e) {}
   }
+  // Returns motion granted.
   function getMotionGranted(pid) {
     try { return localStorage.getItem(getMotionGrantedKey(pid)) === '1'; } catch (e) {}
     return false;
   }
+  // Loads arousal threshold.
   function loadArousalThreshold() {
     try {
       var v = localStorage.getItem(getArousalThresholdKey());
@@ -1384,6 +1403,7 @@
     } catch (e) {}
     return null;
   }
+  // Saves arousal threshold.
   function saveArousalThreshold(val) {
     try { localStorage.setItem(getArousalThresholdKey(), String(val)); } catch (e) {}
     if (db && state.pid) {
@@ -1393,37 +1413,19 @@
       ).catch(function(err) { console.warn('Save arousal to DB:', err); });
     }
   }
+  // Returns vibration arousal key.
   function getVibrationArousalKey() { return 'luci_vibration_arousal_ms_' + (state.pid || 'default'); }
-  function loadVibrationArousal() {
-    try {
-      var v = localStorage.getItem(getVibrationArousalKey());
-      if (v != null && v !== '') { var n = parseInt(v, 10); if (!isNaN(n) && n > 0) return n; }
-    } catch (e) {}
-    return null;
-  }
-  function saveVibrationArousal(ms) {
-    try { localStorage.setItem(getVibrationArousalKey(), String(ms)); } catch (e) {}
-  }
+  // Returns light arousal key.
   function getLightArousalKey() { return 'luci_light_arousal_ms_' + (state.pid || 'default'); }
-  function loadLightArousal() {
-    try {
-      var v = localStorage.getItem(getLightArousalKey());
-      if (v != null && v !== '') { var n = parseInt(v, 10); if (!isNaN(n) && n > 0) return n; }
-    } catch (e) {}
-    return null;
-  }
-  function saveLightArousal(ms) {
-    try { localStorage.setItem(getLightArousalKey(), String(ms)); } catch (e) {}
-  }
+  // Returns volume floor.
   function getVolumeFloor() {
     return (state.userMinVolume != null && state.userMinVolume > 0) ? state.userMinVolume : 0.016;
   }
-  function getDisruptiveSoundVolume() {
-    return 0.8; // enforce fixed 80% for disruptive beep cues
-  }
+  // Returns induction start volume.
   function getInductionStartVolume() {
     return LD_INDUCTION_START_VOLUME;
   }
+  // Handles consume next induction cap.
   function consumeNextInductionCap() {
     var startVol = getInductionStartVolume();
     var cap = 1;
@@ -1434,6 +1436,7 @@
     state.nextTrainInductionCap = null;
     return cap;
   }
+  // Returns next induction volume.
   function getNextInductionVolume(currentVol) {
     var levels = INDUCTION_VOLUME_LEVELS || [];
     var cur = Math.max(0, Math.min(1, currentVol || 0));
@@ -1442,11 +1445,7 @@
     }
     return 1.1; // sentinel: no next step
   }
-  function getLdInductionVolume() {
-    var arousal = state.arousal_threshold != null && state.arousal_threshold > 0 ? state.arousal_threshold : DEFAULT_AROUSAL_SOUND;
-    var baseline = getVolumeFloor();
-    return (arousal + baseline) / 2;
-  }
+  // Stops training current audio.
   function stopTrainingCurrentAudio() {
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
@@ -1474,6 +1473,7 @@
       state.trainingCueWatchdogTimeoutId = null;
     }
   }
+  // Stops all cue audio now.
   function stopAllCueAudioNow() {
     stopTrainingCurrentAudio();
     var Cap = window.Capacitor;
@@ -1489,10 +1489,12 @@
     }
     state.soundRunning = false;
   }
+  // Plays training asset.
   function playTrainingAsset(assetPath, onEnded) {
     // Use HTML audio for intro/guidance so pause/resume can continue from exact currentTime.
     stopTrainingCurrentAudio();
     var done = false;
+    // Handles finish.
     function finish() {
       if (done) return;
       done = true;
@@ -1506,12 +1508,15 @@
     audio.onerror = finish;
     audio.play().catch(function() { finish(); });
   }
+  // Plays training intro dummy.
   function playTrainingIntroDummy(onEnded) {
     playTrainingAsset(TRAINING_INTRO_ASSET, onEnded);
   }
+  // Plays training guidance dummy.
   function playTrainingGuidanceDummy(onEnded) {
     playTrainingAsset(TRAINING_GUIDANCE_ASSET, onEnded);
   }
+  // Plays training cue.
   function playTrainingCue(onEnded) {
     var c = state.tonight_condition;
     // Condition 4 uses recorded voice; every other condition uses beep.
@@ -1519,8 +1524,9 @@
       playOwnVoiceAtStep(80, onEnded);
       return;
     }
-    playFixedBeep80(LD_T0_BEEP_DURATION_MS, onEnded);
+    playFixedBeep80(LD_BEEP_DURATION_MS, onEnded);
   }
+  // Stops training phase.
   function stopTrainingPhase() {
     if (state.trainingTickIntervalId) { clearInterval(state.trainingTickIntervalId); state.trainingTickIntervalId = null; }
     stopAllCueAudioNow();
@@ -1530,6 +1536,7 @@
     state.trainingPauseStartedAtMs = null;
     disableNoSleep();
   }
+  // Handles finish training phase.
   function finishTrainingPhase() {
     stopTrainingPhase();
     state.trainingComplete = true;
@@ -1537,6 +1544,7 @@
     state.appStep = 2;
     render();
   }
+  // Emits training cue.
   function emitTrainingCue() {
     if (!state.trainingActive || state.trainingPaused || state.trainingCueInFlight) return;
     state.trainingCueInFlight = true;
@@ -1582,12 +1590,14 @@
       }
     });
   }
+  // Returns training elapsed ms.
   function getTrainingElapsedMs(nowMs) {
     nowMs = nowMs || Date.now();
     if (!state.trainingStartMs) return 0;
     var pausedExtra = state.trainingPaused && state.trainingPauseStartedAtMs ? (nowMs - state.trainingPauseStartedAtMs) : 0;
     return Math.max(0, nowMs - state.trainingStartMs - (state.trainingPausedAccumMs || 0) - pausedExtra);
   }
+  // Toggles training pause.
   function toggleTrainingPause() {
     if (!state.trainingActive) return;
     if (!state.trainingPaused) {
@@ -1616,9 +1626,11 @@
     }
     render();
   }
+  // Handles skip training phase.
   function skipTrainingPhase() {
     finishTrainingPhase();
   }
+  // Handles restart training from beginning.
   function restartTrainingFromBeginning() {
     if (!state.trainingActive) return;
     stopTrainingCurrentAudio();
@@ -1634,6 +1646,7 @@
     state.trainingPausedAccumMs = 0;
     render();
   }
+  // Starts training phase if needed.
   function startTrainingPhaseIfNeeded() {
     if (state.trainingActive || state.trainingComplete || state.appStep !== 'training') return;
     state.trainingActive = true;
@@ -1683,25 +1696,9 @@
   pidInput.placeholder = 'Participant ID';
   pidInput.id = 'pidInput';
 
-  function getPerc(sample, buffer) {
-    if (!buffer.length) return 0;
-    const count = buffer.filter(function(x) { return x <= sample; }).length;
-    return count / buffer.length;
-  }
-
-  function playText(text, vol, onEnded) {
-    if (!('speechSynthesis' in window)) return;
-    const u = new SpeechSynthesisUtterance();
-    u.text = text;
-    u.volume = Math.max(0, Math.min(1, vol));
-    if (typeof onEnded === 'function') u.onend = onEnded;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-  }
-
   /** Prime native cue path on user gesture before timer-fired sounds. */
   function primeAudioForSleep() {
-    playBeep(0, state.beepFrequencyHz || 800, 30);
+    playBeep(0, 30);
     if ('speechSynthesis' in window) {
       try {
         var u = new SpeechSynthesisUtterance('.');
@@ -1713,7 +1710,7 @@
     }
   }
 
-  /** No-op: torch is native-only now; camera/getUserMedia no longer used for light. */
+  // Primes light for sleep.
   function primeLightForSleep() {}
 
   /** Trigger a minimal vibration on user gesture so later vibrations from timers are allowed on some browsers. */
@@ -1721,17 +1718,19 @@
     luciVibrate(1);
   }
 
-  /** Play beep via NativeAudio only (LuciDreams app). */
-  function playBeep(volume, freqHz, durationMs, onEnded) {
+  /** Play beep via NativeAudio only. */
+  function playBeep(volume, durationMs, onEnded) {
     durationMs = durationMs || 150;
     var vol = Math.max(0, Math.min(1, volume));
     window.luciLastRequestedBeepVolume = vol;
+    // Handles finish after.
     function finishAfter(NA, assetId) {
       setTimeout(function() {
         NA.stop({ assetId: assetId }).catch(function() {});
         if (typeof onEnded === 'function') onEnded();
       }, durationMs);
     }
+    // Plays native beep with volume.
     function playNativeBeepWithVolume(NA) {
       if (window.luciNativeBeepVariantsReady) {
         var variantId = getBeepVariantAssetId(vol);
@@ -1781,25 +1780,23 @@
     });
   }
 
-  function playBeepForRem(volume, freqHz, durationMs, onEnded) {
-    playBeep(volume, freqHz, durationMs, onEnded);
-  }
+  // Plays fixed beep80.
   function playFixedBeep80(durationMs, onEnded) {
     durationMs = durationMs || 200;
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
     if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
-      playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+      playBeep(0.8, durationMs, onEnded);
       return;
     }
     ensureNativeBeepPreloaded().then(function(ok) {
       if (!ok) {
-        playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+        playBeep(0.8, durationMs, onEnded);
         return;
       }
       ensureNativeBeepVariantsPreloaded().then(function(ready) {
         if (!ready) {
-          playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+          playBeep(0.8, durationMs, onEnded);
           return;
         }
         stopNativeBeepVariants(NA);
@@ -1812,70 +1809,33 @@
             }, durationMs);
           })
           .catch(function() {
-            playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+            playBeep(0.8, durationMs, onEnded);
           });
       }).catch(function() {
-        playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+        playBeep(0.8, durationMs, onEnded);
       });
     }).catch(function() {
-      playBeep(0.8, state.beepFrequencyHz, durationMs, onEnded);
+      playBeep(0.8, durationMs, onEnded);
     });
   }
 
-  function playFixedBeep100(durationMs, onEnded) {
-    durationMs = durationMs || 200;
-    var Cap = window.Capacitor;
-    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
-    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
-      playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
-      return;
-    }
-    ensureNativeBeepPreloaded().then(function(ok) {
-      if (!ok) {
-        playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
-        return;
-      }
-      ensureNativeBeepVariantsPreloaded().then(function(ready) {
-        if (!ready) {
-          playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
-          return;
-        }
-        stopNativeBeepVariants(NA);
-        NA.stop({ assetId: 'beep' }).catch(function() {})
-          .then(function() { return NA.play({ assetId: FIXED_BEEP_100_ASSET_ID }); })
-          .then(function() {
-            setTimeout(function() {
-              NA.stop({ assetId: FIXED_BEEP_100_ASSET_ID }).catch(function() {});
-              if (typeof onEnded === 'function') onEnded();
-            }, durationMs);
-          })
-          .catch(function() {
-            playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
-          });
-      }).catch(function() {
-        playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
-      });
-    }).catch(function() {
-      playBeep(1.0, state.beepFrequencyHz, durationMs, onEnded);
-    });
-  }
-
+// Plays fixed beep75.
 function playFixedBeep75(durationMs, onEnded) {
     durationMs = durationMs || 200;
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
     if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
-      playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+      playBeep(0.75, durationMs, onEnded);
       return;
     }
     ensureNativeBeepPreloaded().then(function(ok) {
       if (!ok) {
-        playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+        playBeep(0.75, durationMs, onEnded);
         return;
       }
       ensureNativeBeepVariantsPreloaded().then(function(ready) {
         if (!ready) {
-          playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+          playBeep(0.75, durationMs, onEnded);
           return;
         }
         stopNativeBeepVariants(NA);
@@ -1888,29 +1848,17 @@ function playFixedBeep75(durationMs, onEnded) {
             }, durationMs);
           })
           .catch(function() {
-            playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+            playBeep(0.75, durationMs, onEnded);
           });
       }).catch(function() {
-        playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+        playBeep(0.75, durationMs, onEnded);
       });
     }).catch(function() {
-      playBeep(0.75, state.beepFrequencyHz, durationMs, onEnded);
+      playBeep(0.75, durationMs, onEnded);
     });
   }
 
-  function playLdT0Beep() {
-    var arousal = state.arousal_threshold != null && state.arousal_threshold > 0 ? state.arousal_threshold : DEFAULT_AROUSAL_SOUND;
-    var vol = Math.min(1, arousal + T0_VOLUME_BOOST);
-    if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'beep', type: 'T0', level: vol, info: 'LD induction' });
-    state.soundRunning = true;
-    playBeep(vol, state.beepFrequencyHz, LD_T0_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
-  }
-  function playLdT2Beep() {
-    var vol = getLdInductionVolume();
-    if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'beep', type: 'T2', level: vol, info: 'cue beep' });
-    state.soundRunning = true;
-    playBeep(vol, state.beepFrequencyHz, LD_T2_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
-  }
+  // Handles luci vibrate.
   function luciVibrate(ms) {
     if (!window.Capacitor || !window.Capacitor.isNativePlatform || !window.Capacitor.isNativePlatform()) {
       luciNativeError('vibration', 'not_native');
@@ -1924,18 +1872,12 @@ function playFixedBeep75(durationMs, onEnded) {
       luciNativeError('vibration', 'unavailable');
     });
   }
-  function triggerVibration(ms) {
-    ms = ms || DEFAULT_AROUSAL_VIBRATION_MS;
-    state.soundRunning = true;
-    if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'vibration', type: 'T0', level: ms / 300, info: ms + 'ms' });
-    luciVibrate(ms);
-    setTimeout(function() { state.soundRunning = false; render(); }, ms + 100);
-  }
   /** Flashlight via native torch only. Errors if native API not available. onOutcome optional: { method: 'torch'|'error', error?: string }. */
   function triggerLight(durationMs, onOutcome) {
     durationMs = durationMs || 250;
     state.soundRunning = true;
     if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'flashlight', type: 'T0', level: 1, info: durationMs + 'ms' });
+    // Handles report.
     function report(method, err) {
       if (typeof onOutcome === 'function') onOutcome({ method: method, error: err || undefined });
     }
@@ -1968,6 +1910,7 @@ function playFixedBeep75(durationMs, onEnded) {
     });
   }
   var idbDb = null;
+  // Opens idb.
   function openIdb(cb) {
     if (idbDb) { cb(idbDb); return; }
     if (!window.indexedDB) { cb(null); return; }
@@ -1976,6 +1919,7 @@ function playFixedBeep75(durationMs, onEnded) {
     req.onsuccess = function() { idbDb = req.result; cb(idbDb); };
     req.onerror = function() { cb(null); };
   }
+  // Returns voice blob.
   function getVoiceBlob(pid, cb) {
     openIdb(function(db) {
       if (!db) { cb(null); return; }
@@ -1986,6 +1930,7 @@ function playFixedBeep75(durationMs, onEnded) {
       r.onerror = function() { cb(null); };
     });
   }
+  // Sets voice blob.
   function setVoiceBlob(pid, blob, cb) {
     openIdb(function(db) {
       if (!db) { if (cb) cb(false); return; }
@@ -2000,10 +1945,12 @@ function playFixedBeep75(durationMs, onEnded) {
       tx.onerror = function() { if (cb) cb(false); };
     });
   }
+  // Checks whether has voice for pid.
   function hasVoiceForPid(pid, cb) {
     getVoiceBlob(pid, function(blob) { cb(!!blob); });
   }
 
+  // Shows snackbar.
   function showSnackbar(msg) {
     const el = document.getElementById('snackbar');
     el.textContent = msg;
@@ -2044,6 +1991,7 @@ function playFixedBeep75(durationMs, onEnded) {
     }
   }
 
+  // Handles process motion per second.
   function processMotionPerSecond(motionForSecond) {
     state.epochs++;
     state.secondsRecorded++;
@@ -2076,9 +2024,9 @@ function playFixedBeep75(durationMs, onEnded) {
     }
 
     if (state.secondsRecorded === REM_GATE_SECONDS && state.smoothedMotionSeries.length > 0) {
-      var s4h = state.smoothedMotionSeries;
-      var bucketMeanFirst4h = s4h.reduce(function(a, b) { return a + b; }, 0) / s4h.length;
-      console.log('REM gate (4h): REM logic enabled. n=', s4h.length, 'mean=', bucketMeanFirst4h, '(stillness compares current rolling value vs evolving all-night distribution at', REM_STILLNESS_PERCENT_OF_SERIES_MEAN * 100, '%)');
+      var seriesAtGate = state.smoothedMotionSeries;
+      var meanAtGate = seriesAtGate.reduce(function(a, b) { return a + b; }, 0) / seriesAtGate.length;
+      console.log('REM gate (4h): REM logic enabled. n=', seriesAtGate.length, 'mean=', meanAtGate, '(stillness compares current rolling value vs evolving current-series distribution at', REM_STILLNESS_PERCENT_OF_SERIES_MEAN * 100, '%)');
     }
 
     const afterGate = state.fakeRemTestActive || (
@@ -2098,6 +2046,7 @@ function playFixedBeep75(durationMs, onEnded) {
       var rawAboveCount = seriesAll.reduce(function(count, v) { return count + (motionForSecond > v ? 1 : 0); }, 0);
       var isRawAbove80PercentOfSeries = (rawAboveCount / seriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
 
+      // Finalizes current rem episode.
       function finalizeCurrentRemEpisode() {
         if (!state.inRemEpisode) return;
         var dur = state.secondsRecorded - state.remEpisodeStartSeconds;
@@ -2208,6 +2157,7 @@ function playFixedBeep75(durationMs, onEnded) {
     render();
   }
 
+  // Handles request motion permission.
   function requestMotionPermission() {
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       return DeviceMotionEvent.requestPermission().then(function(perm) {
@@ -2217,15 +2167,18 @@ function playFixedBeep75(durationMs, onEnded) {
     return Promise.resolve('granted');
   }
 
+  // Handles enable no sleep.
   function enableNoSleep() {
     if (!state.noSleep) state.noSleep = new NoSleep();
     return state.noSleep.enable ? state.noSleep.enable() : Promise.resolve();
   }
 
+  // Handles disable no sleep.
   function disableNoSleep() {
     if (state.noSleep && state.noSleep.disable) state.noSleep.disable();
   }
 
+  // Handles start sequence.
   function handleStartSequence() {
     requestMotionPermission().then(function(result) {
       if (result === 'granted') enableNoSleep();
@@ -2257,27 +2210,21 @@ function playFixedBeep75(durationMs, onEnded) {
     });
   }
 
-  function playBaselinePreview(vol) {
-    vol = Math.max(0.01, Math.min(1, vol));
-    if (state.soundType === 'beep') {
-      playBeep(vol, state.beepFrequencyHz, state.beepDurationMs);
-    } else {
-      playText(state.keyword, vol);
-    }
-  }
-
+  // Returns volume plugin.
   function getVolumePlugin() {
     var Plugins = window.Capacitor && window.Capacitor.Plugins;
     if (!Plugins) return null;
     return Plugins.VolumeButtons || Plugins.VolumeControl || null;
   }
 
+  // Clears volume watch.
   function clearVolumeWatch() {
     var VP = getVolumePlugin();
     if (VP && VP.clearWatch) VP.clearWatch().catch(function() {});
     if (VP && VP.removeAllListeners) VP.removeAllListeners().catch(function() {});
   }
 
+  // Sets baseline.
   function setBaseline() {
     if (state._volumeWatchActive) {
       state._volumeWatchActive = false;
@@ -2292,6 +2239,7 @@ function playFixedBeep75(durationMs, onEnded) {
     render();
   }
 
+  // Handles activate motion and start sleep.
   function activateMotionAndStartSleep() {
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       DeviceMotionEvent.requestPermission().then(function(result) {
@@ -2310,8 +2258,9 @@ function playFixedBeep75(durationMs, onEnded) {
     }
   }
 
+  // Starts recording motion.
   function startRecordingMotion() {
-    // Condition/night should be assigned once during config load, not again here.
+    // Condition/night should be assigned once during participant setup, not again here.
     if (state.pid && state.tonight_condition == null) ensureConditionForTonight(state.pid);
     // Prime native audio, vibration on this user gesture before timer-fired cues
     primeAudioForSleep();
@@ -2356,6 +2305,7 @@ function playFixedBeep75(durationMs, onEnded) {
     var savedThreshold = loadArousalThreshold();
     state.arousal_threshold = savedThreshold;
 
+    // Handles on accel.
     function onAccel(e) {
       const x = e.accelerationIncludingGravity.x;
       const y = e.accelerationIncludingGravity.y;
@@ -2398,41 +2348,17 @@ function playFixedBeep75(durationMs, onEnded) {
     render();
   }
 
-  function startStimulation() {
-    state.soundRunning = true;
-    state.totalStimCount++;
-    var floor = getVolumeFloor();
-    var playVolume = Math.max(floor, Math.min(1, state.finalSleepVolume || state.baselineSliderVolume || 0.01));
-    state.soundLog.push({
-      timestamp: Date.now(),
-      keyword: state.keyword,
-      sound_type: state.soundType,
-      volume: playVolume,
-      epoch: state.epochs,
-      playback_completed: false
-    });
-    var logEntry = state.soundLog[state.soundLog.length - 1];
-    function markPlaybackCompleted() { logEntry.playback_completed = true; render(); }
-    if (state.soundType === 'beep') {
-      playBeepForRem(playVolume, state.beepFrequencyHz, state.beepDurationMs, markPlaybackCompleted);
-    } else {
-      playText(state.keyword, playVolume, markPlaybackCompleted);
-    }
-    state.soundHandle = null;
-    render();
-  }
-
+  // Stops sound.
   function stopSound() {
     cancelScheduledCue();
     stopDisruptiveWaveNoise();
     if (state.soundRunning) {
       state.soundRunning = false;
-      if (state.soundHandle) clearInterval(state.soundHandle);
-      state.soundHandle = null;
     }
     render();
   }
 
+  // Computes motion averages.
   function computeMotionAverages() {
     var motion = state.motionSamplesForBackend;
     var remEpisodes = state.remEpisodes;
@@ -2476,6 +2402,7 @@ function playFixedBeep75(durationMs, onEnded) {
     return { baseline_avg: baseline_avg, rem_episode_averages: rem_episode_averages, intermediate_avg: intermediate_avg };
   }
 
+  // Handles episode motion avg.
   function episodeMotionAvg(startSec, durationSec) {
     var motion = state.motionSamplesForBackend;
     if (startSec + durationSec > motion.length || durationSec <= 0) return null;
@@ -2574,6 +2501,7 @@ function playFixedBeep75(durationMs, onEnded) {
     };
   }
 
+  // Returns stillness cutoff from series.
   function getStillnessCutoffFromSeries(series) {
     var s = series || [];
     if (!s.length) return null;
@@ -2582,7 +2510,8 @@ function playFixedBeep75(durationMs, onEnded) {
     return sorted[idx];
   }
 
-  function getFirst4hSeriesStillnessCutoff() {
+  // Returns current series stillness cutoff.
+  function getCurrentSeriesStillnessCutoff() {
     var s = state.smoothedMotionSeries || [];
     return getStillnessCutoffFromSeries(s);
   }
@@ -2640,7 +2569,7 @@ function playFixedBeep75(durationMs, onEnded) {
     });
 
     var roll = computeStimulationRollups(rem_periods);
-    var first4hStillnessCutoff = getFirst4hSeriesStillnessCutoff();
+    var currentSeriesStillnessCutoff = getCurrentSeriesStillnessCutoff();
     // Persist per-second motion amount (not 80th-percentile cutoff series).
     var motionSeries = (state.motionSamplesForBackend || []).slice();
 
@@ -2651,7 +2580,9 @@ function playFixedBeep75(durationMs, onEnded) {
       device_time_start: nightStartIso,
       night_number: night_number,
       epochs_count: state.epochs,
-      motion_80pct_cutoff_first_4h: first4hStillnessCutoff,
+      motion_80pct_cutoff_current_series: currentSeriesStillnessCutoff,
+      // Kept for backward compatibility with older exports/analytics expecting this key.
+      motion_80pct_cutoff_first_4h: currentSeriesStillnessCutoff,
       rem_minutes: totalRemMinutes,
       rem_motion_avg: roll.rem_motion_avg,
       rem_episode_count: rem_periods.length,
@@ -2741,6 +2672,7 @@ function playFixedBeep75(durationMs, onEnded) {
     }
   }
 
+  // Sends sleep data.
   function sendSleepData(activeMode) {
     if (!state.pid) return;
 
@@ -2769,6 +2701,7 @@ function playFixedBeep75(durationMs, onEnded) {
       });
   }
 
+  // Handles wake up.
   function wakeUp() {
     if (state.inRemEpisode && state.remEpisodeStartTime) {
       var dur = state.secondsRecorded - state.remEpisodeStartSeconds;
@@ -2815,76 +2748,18 @@ function playFixedBeep75(durationMs, onEnded) {
     render();
   }
 
-  function applyConfigData(pid, data) {
+  // Applies config data.
+  function applyConfigData(pid) {
     state.pid = pid;
-    state.keyword = DEFAULT_CUE_KEYWORD;
-    state.soundType = DEFAULT_CUE_SOUND_TYPE;
-    state.beepFrequencyHz = DEFAULT_BEEP_FREQUENCY_HZ;
     state.beepDurationMs = DEFAULT_BEEP_DURATION_MS;
-    state.intervalSeconds = Number(data.interval) || 10;
-    state.baseStartVolume = 0.01;
+    state.intervalSeconds = 10;
     ensureConditionForTonight(pid);
     state.appStep = 1;
-    state.lastSession = null;
     render();
-    fetchLastSession(pid);
     setTimeout(checkNativeApisOnLogin, 800);
   }
 
-  function fetchLastSession(pid) {
-    function applyLast(session) {
-      state.lastSession = session;
-      render();
-    }
-    if (!db) { applyLast(null); return; }
-    var sessionsRef = db.collection('sleep_studies').doc(pid).collection('sessions');
-    sessionsRef.orderBy('general.device_time_end', 'desc').limit(1).get()
-      .catch(function() {
-        // Backward compatibility for older docs that only have root device_time_end/device_time.
-        return sessionsRef.orderBy('device_time_end', 'desc').limit(1).get();
-      })
-      .catch(function() {
-        // Older legacy docs.
-        return sessionsRef.orderBy('device_time', 'desc').limit(1).get();
-      })
-      .then(function(snap) {
-        if (snap.empty) applyLast(null);
-        else {
-          var d = snap.docs[0].data();
-          var remCount, totalMin, dt;
-          if (d.general) {
-            var periods = d.rem_periods || [];
-            remCount = d.general.rem_episode_count != null ? d.general.rem_episode_count : periods.length;
-            totalMin = d.general.rem_minutes != null ? d.general.rem_minutes : 0;
-            if (totalMin === 0 && remCount > 0 && periods.length > 0) {
-              totalMin = periods.reduce(function(s, ep) {
-                return s + Math.round((ep.duration_sec || 0) / 60);
-              }, 0);
-            }
-            dt = d.general.device_time_end || d.device_time_end || d.device_time || d.general.wake_time;
-          } else {
-            var periods = Array.isArray(d.rem_periods) ? d.rem_periods : (d.rem_episodes || []);
-            remCount = periods.length;
-            totalMin = d.total_rem_minutes != null ? d.total_rem_minutes : 0;
-            if (totalMin === 0 && remCount > 0) {
-              totalMin = periods.reduce(function(s, ep) {
-                return s + (ep.duration_minutes != null ? ep.duration_minutes : Math.round((ep.duration_sec || 0) / 60));
-              }, 0);
-            }
-            dt = d.device_time_end || d.device_time;
-          }
-          var totalHrs = totalMin / 60;
-          applyLast({
-            device_time_end: dt || d.device_time_end || d.device_time || '',
-            total_rem_minutes: totalMin,
-            total_rem_hours: totalHrs,
-            rem_episode_count: remCount
-          });
-        }
-      })
-      .catch(function() { applyLast(null); });
-  }
-
+  // Saves pasted lab config.
   function savePastedLabConfig(jsonText) {
     try {
       var config = JSON.parse(jsonText);
@@ -2895,17 +2770,14 @@ function playFixedBeep75(durationMs, onEnded) {
     } catch (e) { showSnackbar('Invalid JSON: ' + (e.message || 'parse error')); }
   }
 
+  // Fetches config.
   function fetchConfig() {
     const pid = (document.getElementById('pidInput') || pidInput).value.trim();
     if (!pid) return;
-
-    if (!db) {
-      showSnackbar('Connect to your lab first (open the link from your researcher).');
-      return;
-    }
-    applyConfigData(pid, { interval: 10 });
+    applyConfigData(pid);
   }
 
+  // Renders.
   function render() {
     const container = document.getElementById('stepContent');
     if (!container) return;
@@ -2913,6 +2785,7 @@ function playFixedBeep75(durationMs, onEnded) {
       container.classList.toggle('training-layout', state.appStep === 'training');
     }
 
+    // Handles el.
     function el(tag, attrs, children) {
       const e = document.createElement(tag);
       if (attrs) for (const k in attrs) {
@@ -2963,7 +2836,7 @@ function playFixedBeep75(durationMs, onEnded) {
         input.id = 'pidInput';
         container.appendChild(input);
         container.appendChild(el('div', { style: { height: '30px' } }));
-        const btn = el('button', { className: 'btn', onClick: fetchConfig }, ['Load Settings']);
+        const btn = el('button', { className: 'btn', onClick: fetchConfig }, ['Continue']);
         container.appendChild(btn);
         break;
       }
@@ -3002,6 +2875,7 @@ function playFixedBeep75(durationMs, onEnded) {
             var chunks = [];
             var startTs = 0;
             var durationInterval = null;
+            // Updates duration.
             function updateDuration() {
               var el = document.getElementById('voiceDuration');
               if (!el) return;
@@ -3009,11 +2883,13 @@ function playFixedBeep75(durationMs, onEnded) {
               el.textContent = sec + ' s';
               if (Date.now() - startTs >= VOICE_RECORD_MAX_MS) stopRecording();
             }
+            // Stops recording.
             function stopRecording() {
               if (durationInterval) clearInterval(durationInterval);
               durationInterval = null;
               if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
             }
+            // Handles on record click.
             function onRecordClick() {
               if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 showSnackbar('Microphone not supported.');
@@ -3060,6 +2936,7 @@ function playFixedBeep75(durationMs, onEnded) {
                 if (sb) sb.style.display = '';
               }).catch(function() { showSnackbar('Microphone access denied.'); });
             }
+            // Handles on stop click.
             function onStopClick() { stopRecording(); }
             recBtn.onclick = onRecordClick;
             stopBtn.onclick = onStopClick;
@@ -3112,20 +2989,6 @@ function playFixedBeep75(durationMs, onEnded) {
           break;
         }
         container.appendChild(el('p', { className: 'icon-lg' }, ['🔐']));
-        if (state.lastSession) {
-          var dt = state.lastSession.device_time_end;
-          var dateStr = '';
-          if (dt) {
-            try {
-              var d = new Date(dt);
-              dateStr = isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-            } catch (e) {}
-          }
-          var lastLine = 'Last night: ' + (state.lastSession.rem_episode_count || 0) + ' REM episode(s), ' + (state.lastSession.total_rem_minutes != null ? state.lastSession.total_rem_minutes : 0) + ' min total REM';
-          if (dateStr) lastLine += ' (' + dateStr + ')';
-          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '8px' } }, [lastLine]));
-          container.appendChild(el('div', { className: 'divider' }));
-        }
         container.appendChild(el('p', { className: 'text-title', style: { color: 'var(--orange-accent)', fontWeight: 'bold' } }, ['IMPORTANT: Your screen must stay ON.']));
         container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.']));
         container.appendChild(el('div', { className: 'divider' }));
@@ -3141,13 +3004,14 @@ function playFixedBeep75(durationMs, onEnded) {
         var initialVol = state.baselineSliderVolume != null ? Math.max(0, Math.min(1, state.baselineSliderVolume)) : 0.1;
         state.baselineSliderVolume = initialVol;
         var volumeBeepTimeout = null;
+        // Applies volume change.
         function applyVolumeChange(vol) {
           vol = Math.max(0, Math.min(1, vol != null ? vol : 0));
           state.baselineSliderVolume = vol;
           if (volumeBeepTimeout) clearTimeout(volumeBeepTimeout);
           volumeBeepTimeout = setTimeout(function() {
             volumeBeepTimeout = null;
-            playBeep(vol, state.beepFrequencyHz, state.beepDurationMs || 150);
+            playBeep(vol, state.beepDurationMs || 150);
           }, 200);
         }
         container.appendChild(el('div', { style: { height: '8px' } }));
@@ -3250,6 +3114,7 @@ function playFixedBeep75(durationMs, onEnded) {
     }
   }
 
+  // Handles run when ready.
   function runWhenReady() {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', runWhenReady);
