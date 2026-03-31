@@ -214,4 +214,42 @@ If changing stimulation behavior:
 - `DISRUPTIVE_PERIOD_SEC`: disruptive duration before induction.
 - `NIGHT_MAX_TRAINS`, `REM_EPISODE_MAX_TRAINS`: caps.
 
+---
+
+## 12) Manual Firestore Retention Cleanup (Spark)
+
+If Firestore TTL is not enabled (e.g., Spark plan), use:
+
+- `cleanup_expired_firestore.py`
+
+It deletes docs in collection group `sessions` where:
+- `expires_at <= now`
+
+Current retention window in code is **48h**.
+
+Default mode is dry-run.
+
+Examples:
+
+```bash
+cd "/Users/solenenoize/Desktop/LuciDreams/LuciDreams-main"
+
+# Dry-run all participants
+python3 cleanup_expired_firestore.py
+
+# Apply delete all participants
+python3 cleanup_expired_firestore.py --apply
+
+# Dry-run one participant only
+python3 cleanup_expired_firestore.py --pid Sole
+
+# Apply delete one participant only
+python3 cleanup_expired_firestore.py --pid Solene --apply
+```
+
+Optional flags:
+- `--project lucidreans`
+- `--service-account /path/to/service-account.json`
+- `--batch-size 400`
+
 

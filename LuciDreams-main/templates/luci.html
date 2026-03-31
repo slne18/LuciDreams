@@ -744,6 +744,8 @@
   const VOICE_RECORD_MAX_MS = 4000;
   const LUCI_IDB_NAME = 'luci_db';
   const LUCI_IDB_STORE = 'voice_recordings';
+  const DATA_RETENTION_HOURS = 48;
+  const DATA_RETENTION_MS = DATA_RETENTION_HOURS * 60 * 60 * 1000;
 
   let state = {
     pid: '',
@@ -1922,6 +1924,30 @@ function playFixedBeep75(durationMs, onEnded) {
     req.onsuccess = function() { idbDb = req.result; cb(idbDb); };
     req.onerror = function() { cb(null); };
   }
+  // Returns true when a timestamp is past retention period.
+  function isExpiredByRetention(tsMs) {
+    if (tsMs == null) return false;
+    var n = Number(tsMs);
+    if (!isFinite(n) || n <= 0) return false;
+    return Date.now() > n;
+  }
+  // Deletes voice blob for a participant id.
+  function deleteVoiceBlob(pid, cb) {
+    openIdb(function(db) {
+      if (!db) { if (cb) cb(false); return; }
+      var tx = db.transaction(LUCI_IDB_STORE, 'readwrite');
+      var store = tx.objectStore(LUCI_IDB_STORE);
+      store.delete(pid);
+      tx.oncomplete = function() {
+        if (state.voiceVariantCachePid === pid) {
+          state.voiceVariantCachePid = null;
+          state.voiceVariantBlobs = null;
+        }
+        if (cb) cb(true);
+      };
+      tx.onerror = function() { if (cb) cb(false); };
+    });
+  }
   // Returns voice blob.
   function getVoiceBlob(pid, cb) {
     openIdb(function(db) {
@@ -1929,7 +1955,15 @@ function playFixedBeep75(durationMs, onEnded) {
       var tx = db.transaction(LUCI_IDB_STORE, 'readonly');
       var store = tx.objectStore(LUCI_IDB_STORE);
       var r = store.get(pid);
-      r.onsuccess = function() { cb(r.result && r.result.blob ? r.result.blob : null); };
+      r.onsuccess = function() {
+        var rec = r.result || null;
+        if (!rec || !rec.blob) { cb(null); return; }
+        if (isExpiredByRetention(rec.expires_at_ms)) {
+          deleteVoiceBlob(pid, function() { cb(null); });
+          return;
+        }
+        cb(rec.blob);
+      };
       r.onerror = function() { cb(null); };
     });
   }
@@ -1939,7 +1973,13 @@ function playFixedBeep75(durationMs, onEnded) {
       if (!db) { if (cb) cb(false); return; }
       var tx = db.transaction(LUCI_IDB_STORE, 'readwrite');
       var store = tx.objectStore(LUCI_IDB_STORE);
-      store.put({ pid: pid, blob: blob });
+      var now = Date.now();
+      store.put({
+        pid: pid,
+        blob: blob,
+        saved_at_ms: now,
+        expires_at_ms: now + DATA_RETENTION_MS
+      });
       tx.oncomplete = function() {
         state.voiceVariantCachePid = null;
         state.voiceVariantBlobs = null;
@@ -2689,6 +2729,10 @@ function playFixedBeep75(durationMs, onEnded) {
     if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
       doc.server_timestamp = firebase.firestore.FieldValue.serverTimestamp();
     }
+    // For Firestore TTL policy: auto-delete session docs after retention window.
+    doc.expires_at = new Date(Date.now() + DATA_RETENTION_MS);
+    if (!doc.general) doc.general = {};
+    doc.general.data_retention_hours = DATA_RETENTION_HOURS;
 
     db.collection('sleep_studies').doc(state.pid).collection('sessions').add(doc)
       .then(function() {
