@@ -379,7 +379,7 @@
   window.luciNativeBeepIsUrl = false;
   window.luciNativeBeepVariantsReady = false;
   window.luciNativeBeepVariantsPromise = null;
-  window.luciNativeBeepVariantVolumes = [0.01, 0.02, 0.03, 0.05, 0.06, 0.08, 0.25, 0.5, 0.75, 1.0];
+  window.luciNativeBeepVariantVolumes = [0.01, 0.02, 0.03, 0.05, 0.08, 0.25, 0.5, 0.75, 1.0];
   window.luciNativeAudioPreloadPromise = null;
   window.luciNativeLongAssetPromises = {};
   window.luciNativeLongAssetPaths = {};
@@ -454,7 +454,8 @@
     }
     if (window.luciNativeBeepPreloaded) return Promise.resolve(true);
     if (window.luciNativeAudioPreloadPromise) return window.luciNativeAudioPreloadPromise;
-    var candidates = ['public/sounds/beep.wav'];
+    // Primary base asset was historically beep.wav; now we also allow beep_v1.wav.
+    var candidates = ['public/sounds/beep.wav', 'public/sounds/beep_v1.wav'];
     // Handles mark preloaded.
     function markPreloaded(srcLabel, assetPath, isUrl) {
       window.luciNativeBeepPreloaded = true;
@@ -695,16 +696,16 @@
   const CALIBRATION_VOLUME_STEP = 1 / 16; // iOS hardware volume increments are typically 16 steps
   // --- TEMP TEST HARNESS (delete this block when done) ---
   const ENABLE_FAKE_REM_TEST = false; // Disabled for normal sleep runs.
-  const FAKE_REM_TRIGGER_AFTER_SEC = 30; // Trigger fake REM after 30s 
+  const FAKE_REM_TRIGGER_AFTER_SEC = 30; // Trigger fake REM after 30s
   // --- END TEMP TEST HARNESS ---
   // One train = 2min disruptive + LD induction (until arousal)
   const DISRUPTIVE_PERIOD_SEC = 120;
-  const DISRUPTIVE_SOUND_DURATION_MS = 1500;    // disruptive beep lasts 1.5 seconds
+  const DISRUPTIVE_SOUND_DURATION_MS = 3000;    // disruptive beep lasts 3 seconds
   const DISRUPTIVE_SECOND_CUE_OFFSET_MS = 60000; // disruptive beep/vibration second cue at +60s
   const DISRUPTIVE_WAVE_VOLUME = 0.15;            // theta/gamma disruptive wave volume fixed at 15%
   const DISRUPTIVE_THETA_ASSET = 'theta.mp3';
   const DISRUPTIVE_GAMMA_ASSET = 'gamma.mp3';
-  const FIXED_BEEP_80_ASSET_ID = 'beep_v80';
+  const FIXED_BEEP_75_TRAINING_ASSET_ID = 'beep_v75';
   const FIXED_BEEP_75_ASSET_ID = 'beep_v75';
   const DISRUPTIVE_LIGHT_OFFSET_MS = 90000;   // 1m30 after train start
   const DISRUPTIVE_LIGHT_DURATION_MS = 30000; // 30s at 100%
@@ -1063,7 +1064,8 @@
     } else if (c === 2) {
       var vibMs = DISRUPTIVE_VIBRATION_MS;
       var gap = DISRUPTIVE_VIBRATION_GAP_MS;
-      var hasVibrate = !!(navigator.vibrate) || !!(window.luciUseNativeHaptics);
+      var hasVibrate = !!(navigator.vibrate) || !!(window.luciUseNativeHaptics) ||
+        !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics && typeof window.Capacitor.Plugins.Haptics.vibrate === 'function');
       var vibrationStarts = [0, DISRUPTIVE_SECOND_CUE_OFFSET_MS];
       trainRecord.disruptive.params = {
         vibration_supported: hasVibrate,
@@ -1076,10 +1078,9 @@
           (function(ii) {
             var burstStart = eventStartMs + ii * (vibMs + gap);
             state.disruptiveTimeouts.push(setTimeout(function() {
-              if (hasVibrate) {
-                trainRecord.disruptive.took_place = true;
-                luciVibrate(vibMs);
-              }
+              // Always attempt vibration at scheduled bursts; luciVibrate handles availability.
+              trainRecord.disruptive.took_place = true;
+              luciVibrate(vibMs);
             }, burstStart));
           })(i);
         }
@@ -1521,10 +1522,10 @@
     var c = state.tonight_condition;
     // Condition 4 uses recorded voice; every other condition uses beep.
     if (c === 4) {
-      playOwnVoiceAtStep(80, onEnded);
+      playOwnVoiceAtStep(75, onEnded);
       return;
     }
-    playFixedBeep80(LD_BEEP_DURATION_MS, onEnded);
+    playFixedBeep75Training(LD_BEEP_DURATION_MS, onEnded);
   }
   // Stops training phase.
   function stopTrainingPhase() {
@@ -1780,8 +1781,8 @@
     });
   }
 
-  // Plays fixed beep80.
-  function playFixedBeep80(durationMs, onEnded) {
+  // Plays fixed beep75 for training cues.
+  function playFixedBeep75Training(durationMs, onEnded) {
     durationMs = durationMs || 200;
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
@@ -1801,10 +1802,10 @@
         }
         stopNativeBeepVariants(NA);
         NA.stop({ assetId: 'beep' }).catch(function() {})
-          .then(function() { return NA.play({ assetId: FIXED_BEEP_80_ASSET_ID }); })
+          .then(function() { return NA.play({ assetId: FIXED_BEEP_75_TRAINING_ASSET_ID }); })
           .then(function() {
             setTimeout(function() {
-              NA.stop({ assetId: FIXED_BEEP_80_ASSET_ID }).catch(function() {});
+              NA.stop({ assetId: FIXED_BEEP_75_TRAINING_ASSET_ID }).catch(function() {});
               if (typeof onEnded === 'function') onEnded();
             }, durationMs);
           })
@@ -1864,11 +1865,13 @@ function playFixedBeep75(durationMs, onEnded) {
       luciNativeError('vibration', 'not_native');
       return;
     }
-    if (!window.luciUseNativeHaptics || !window.Capacitor.Plugins || !window.Capacitor.Plugins.Haptics) {
+    var Haptics = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics;
+    if (Haptics && typeof Haptics.vibrate === 'function') window.luciUseNativeHaptics = true;
+    if (!window.luciUseNativeHaptics || !Haptics || typeof Haptics.vibrate !== 'function') {
       luciNativeError('vibration', 'unavailable');
       return;
     }
-    window.Capacitor.Plugins.Haptics.vibrate({ duration: ms }).catch(function() {
+    Haptics.vibrate({ duration: ms }).catch(function() {
       luciNativeError('vibration', 'unavailable');
     });
   }
@@ -3086,12 +3089,6 @@ function playFixedBeep75(durationMs, onEnded) {
           var inductionPct = Math.round((Math.min(state.inductionCap || 1, state.inductionVolume || 0) || 0) * 100);
           container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '2px' } }, [
             'Induction volume: ' + String(inductionPct) + '%'
-          ]));
-        }
-        if (state.tonight_condition != null) {
-          var conditionName = CONDITION_LABELS[state.tonight_condition] || ('Condition ' + String(state.tonight_condition));
-          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '4px' } }, [
-            'Condition: ' + conditionName + ' (' + String(state.tonight_condition) + ')'
           ]));
         }
         if (ENABLE_FAKE_REM_TEST) {
