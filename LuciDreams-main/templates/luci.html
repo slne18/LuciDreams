@@ -3121,14 +3121,6 @@ function playFixedBeep75(durationMs, onEnded) {
           'When you wake up tap the button below.'
         ]));
         container.appendChild(el('p', { style: { color: 'var(--green-accent)', fontSize: '1.25rem' } }, ['🌙 Tracking Active']));
-        var phaseLabel = state.trainPhase === 'disruptive'
-          ? 'Disruptive'
-          : state.trainPhase === 'induction'
-          ? 'Induction'
-          : 'Idle';
-        container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--primary-accent)', marginTop: '4px' } }, [
-          'Current phase: ' + phaseLabel
-        ]));
         if (state.trainPhase === 'induction') {
           var inductionPct = Math.round((Math.min(state.inductionCap || 1, state.inductionVolume || 0) || 0) * 100);
           container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '2px' } }, [
