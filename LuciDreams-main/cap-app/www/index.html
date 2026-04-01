@@ -680,16 +680,15 @@
     }
   } catch (e) { console.warn('Firebase init:', e); }
 
-  // --- EXPERIMENT PARAMETERS (from Flutter) ---
+  // --- EXPERIMENT PARAMETERS ---
   const BUFFER_SIZE = 800;
   const SIG_MOTION = 0.1;
   const REM_GATE_SECONDS = 14400;   // 4 hours before REM detection runs
   const REM_SMOOTH_WINDOW_SEC = 180; // Rolling mean over last 180 seconds (updated every second)
   const REM_STILLNESS_PERCENT_OF_SERIES_MEAN = 0.8; // Stillness percentile against the evolving current smoothed-motion series
-  // REM Episode Manager (refined)
-  /** Hard cap on stimulation trains for the entire night (all REM episodes combined). Not per REM period. */
+  // REM Episode Manager
   const NIGHT_MAX_TRAINS = 10;
-  const REM_EPISODE_MAX_TRAINS = 5;           // Per-REM-episode cap (night cap still enforced separately)
+  const REM_EPISODE_MAX_TRAINS = 5;           // Per-REM-episode cap 
   const REFRACTORY_PERIOD_SEC = 300;          // 5 min between trains
   const AROUSAL_CHECK_WINDOW_SEC = 5;          // Movement within 5s after induction cue (raw motion; for arousal only)
   const MOVEMENT_DURATION_FOR_AROUSAL = 2;    // Require 2s movement for arousal (kept: responsive to cue reaction)
@@ -802,6 +801,7 @@
     disruptiveTimeouts: [],    // timeouts to clear when train ends
     inductionVolume: 0.1,
     inductionCap: 1,           // induction climbs until arousal or 100%
+    nextTrainInductionCap: null, // one-shot cap for next train after arousal (95% of threshold)
     lastInductionPlayEpoch: null,
     currentEpisodeTrains: [],  // { disruptive: {}, induction: { cues: [], arousal_threshold } }
     fakeRemTestActive: false,
@@ -892,11 +892,24 @@
     return !!(ENABLE_FAKE_REM_TEST && state.fakeRemTestActive && state.fakeTestSequenceActive);
   }
   // --- END TEMP TEST HARNESS ---
+  // Returns true when a train actually delivered at least one cue.
+  function trainHasDeliveredCue(train) {
+    if (!train) return false;
+    var disruptivePlayed = !!(train.disruptive && train.disruptive.took_place);
+    var cues = (train.induction && train.induction.cues) || [];
+    var inductionPlayed = cues.some(function(c) { return !!(c && c.took_place); });
+    return disruptivePlayed || inductionPlayed;
+  }
+  // Counts trains that actually delivered at least one cue.
+  function countDeliveredTrains(trains) {
+    var list = trains || [];
+    return list.reduce(function(sum, tr) { return sum + (trainHasDeliveredCue(tr) ? 1 : 0); }, 0);
+  }
   function totalNightTrainCount() {
     var finished = (state.remEpisodes || []).reduce(function(sum, ep) {
-      return sum + (((ep && ep.trains) && ep.trains.length) || 0);
+      return sum + countDeliveredTrains((ep && ep.trains) || []);
     }, 0);
-    var current = state.inRemEpisode ? ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) : 0;
+    var current = state.inRemEpisode ? countDeliveredTrains(state.currentEpisodeTrains || []) : 0;
     return finished + current;
   }
   // Checks whether has reached night train cap.
@@ -907,7 +920,7 @@
   // Checks whether has reached episode train cap.
   function hasReachedEpisodeTrainCap() {
     if (isFakeConditionSweepModeActive()) return false;
-    return ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) >= REM_EPISODE_MAX_TRAINS;
+    return countDeliveredTrains(state.currentEpisodeTrains || []) >= REM_EPISODE_MAX_TRAINS;
   }
   // --- TEMP TEST HARNESS  ---
   function setupTemporaryFakeRemForTesting() {
@@ -1037,8 +1050,9 @@
       if (c === 6 || c === 7) stopSound();
       state.trainPhase = 'induction';
       state.inductionVolume = getInductionStartVolume();
-      // Induction cues always ramp from 10% by +10% until arousal or 100%.
-      state.inductionCap = 1;
+      // After arousal in previous train, next train is capped at 95% of that arousal.
+      // Otherwise cap remains full range (1.0).
+      state.inductionCap = consumeNextInductionCap();
       state.lastInductionPlayEpoch = null;
       if (c === 0) {
         endTrain(false);
@@ -1124,6 +1138,7 @@
         state.fakeTestConditionIndex++;
         state.tonight_condition = state.fakeTestConditions[state.fakeTestConditionIndex];
         state.inductionCap = 1;
+        state.nextTrainInductionCap = null;
         if (state.appStep === 5 && state.inRemEpisode && state.trainPhase === null) startTrain();
       } else {
         state.fakeTestSequenceActive = false;
@@ -1426,6 +1441,17 @@
   function getInductionStartVolume() {
     return LD_INDUCTION_START_VOLUME;
   }
+  // Handles consume next induction cap.
+  function consumeNextInductionCap() {
+    var startVol = getInductionStartVolume();
+    var cap = 1;
+    if (state.nextTrainInductionCap != null && state.nextTrainInductionCap > 0) {
+      cap = Math.max(startVol, Math.min(1, state.nextTrainInductionCap));
+    }
+    // apply only to immediate next train
+    state.nextTrainInductionCap = null;
+    return cap;
+  }
   // Returns next induction volume.
   function getNextInductionVolume(currentVol) {
     var levels = INDUCTION_VOLUME_LEVELS || [];
@@ -1433,7 +1459,7 @@
     for (var i = 0; i < levels.length; i++) {
       if (levels[i] > cur + 0.0001) return levels[i];
     }
-    return null;
+    return 1.1; // sentinel: no next step
   }
   // Stops training current audio.
   function stopTrainingCurrentAudio() {
@@ -1708,7 +1734,7 @@
     luciVibrate(1);
   }
 
-  /** Play beep via NativeAudio only (LuciDreams app). */
+  /** Play beep via NativeAudio only. */
   function playBeep(volume, durationMs, onEnded) {
     durationMs = durationMs || 150;
     var vol = Math.max(0, Math.min(1, volume));
@@ -2100,6 +2126,7 @@ function playFixedBeep75(durationMs, onEnded) {
         state.currentRemEpisodeEntryThreshold = null;
         state.trainPhase = null;
         state.trainStartEpoch = null;
+        state.nextTrainInductionCap = null;
         state.lastInductionPlayEpoch = null;
         clearDisruptiveTimeouts();
         if (nextTrainTimeoutId) { clearTimeout(nextTrainTimeoutId); nextTrainTimeoutId = null; }
@@ -2116,6 +2143,8 @@ function playFixedBeep75(durationMs, onEnded) {
             train.induction.cues[train.induction.cues.length - 1].arousal_detected = true;
             train.induction.arousal_threshold = state.inductionVolume;
             state.arousal_threshold = state.inductionVolume;
+            // Next train in this REM episode: cap induction at 95% of the arousal volume.
+            state.nextTrainInductionCap = Math.max(getInductionStartVolume(), Math.min(1, state.inductionVolume * 0.95));
             saveArousalThreshold(state.arousal_threshold);
             console.log('Arousal threshold set:', state.arousal_threshold);
           }
@@ -2138,6 +2167,7 @@ function playFixedBeep75(durationMs, onEnded) {
           state.currentRemEpisodeEntryThreshold = movementNoiseFloor;
           state.inRemEpisode = true;
           state.currentEpisodeTrains = [];
+          state.nextTrainInductionCap = null;
           state.lastCueEpoch = 0;
           if (state.tonight_condition !== 0 && !hasReachedNightTrainCap() && !hasReachedEpisodeTrainCap()) startTrain();
         }
@@ -2151,7 +2181,7 @@ function playFixedBeep75(durationMs, onEnded) {
             var train2 = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
             if (train2 && train2.induction.arousal_threshold == null) {
               var nextVol = getNextInductionVolume(state.inductionVolume);
-              if (nextVol != null && nextVol <= state.inductionCap + 0.001) {
+              if (nextVol <= state.inductionCap + 0.001) {
                 state.inductionVolume = nextVol;
                 playInductionCue();
               } else {
@@ -2319,6 +2349,7 @@ function playFixedBeep75(durationMs, onEnded) {
     state.disruptiveTimeouts = [];
     state.inductionVolume = getInductionStartVolume();
     state.inductionCap = 1;
+    state.nextTrainInductionCap = null;
     state.fakeRemTestActive = false;
     if (state.fakeRemTestTimeoutId) {
       clearTimeout(state.fakeRemTestTimeoutId);
@@ -2465,7 +2496,7 @@ function playFixedBeep75(durationMs, onEnded) {
     for (ei = 0; ei < periods.length; ei++) {
       ep = periods[ei];
       trs = ep.trains || [];
-      total_train_count += trs.length;
+      total_train_count += countDeliveredTrains(trs);
       for (tj = 0; tj < trs.length; tj++) {
         tr = trs[tj];
         var dType = tr && tr.disruptive ? tr.disruptive.condition : null;
@@ -2595,7 +2626,8 @@ function playFixedBeep75(durationMs, onEnded) {
 
     var roll = computeStimulationRollups(rem_periods);
     var currentSeriesStillnessCutoff = getCurrentSeriesStillnessCutoff();
-    var cutoffSeries = (state.motion80pctCutoffSeries || []).slice();
+    // Persist per-second motion amount (not 80th-percentile cutoff series).
+    var motionSeries = (state.motionSamplesForBackend || []).slice();
 
     var general = {
       session_type: activeMode,
@@ -2604,7 +2636,6 @@ function playFixedBeep75(durationMs, onEnded) {
       device_time_start: nightStartIso,
       night_number: night_number,
       epochs_count: state.epochs,
-      motion_80pct_cutoff_current_series: currentSeriesStillnessCutoff,
       // Kept for backward compatibility with older exports/analytics expecting this key.
       motion_80pct_cutoff_first_4h: currentSeriesStillnessCutoff,
       rem_minutes: totalRemMinutes,
@@ -2624,10 +2655,8 @@ function playFixedBeep75(durationMs, onEnded) {
 
     var firestoreDoc = {
       participant_id: state.pid,
-      general: general
-    };
-    firestoreDoc.rem_dynamic_thresholds = {
-      motion_80pct_cutoff_series: cutoffSeries
+      general: general,
+      motion_per_second_series: motionSeries
     };
     if (cond !== 0) firestoreDoc.rem_periods = rem_periods;
 
@@ -2715,41 +2744,18 @@ function playFixedBeep75(durationMs, onEnded) {
     if (!doc.general) doc.general = {};
     doc.general.data_retention_hours = DATA_RETENTION_HOURS;
 
-    var writeSession = function() {
-      db.collection('sleep_studies').doc(state.pid).collection('sessions').add(doc)
-        .then(function() {
-          state.motionSamplesForBackend = [];
-          state.soundLog = [];
-          console.log('Data synced to Firestore:', activeMode);
-          openWakeSurveyIfConfigured(doc, built.surveyData);
-        })
-        .catch(function(err) {
-          console.error(err);
-          var code = err && (err.code || err.message) ? String(err.code || err.message) : 'unknown';
-          showSnackbar('Sync Error: ' + code);
-          openWakeSurveyIfConfigured(doc, built.surveyData);
-        });
-    };
-
-    // Ensure anonymous auth exists before writing when auth SDK is available.
-    if (typeof firebase !== 'undefined' && firebase.auth) {
-      var auth = firebase.auth();
-      if (auth.currentUser) {
-        writeSession();
-      } else {
-        auth.signInAnonymously()
-          .then(function() { writeSession(); })
-          .catch(function(err) {
-            console.error(err);
-            var code = err && (err.code || err.message) ? String(err.code || err.message) : 'unknown';
-            showSnackbar('Auth Error: ' + code);
-            openWakeSurveyIfConfigured(doc, built.surveyData);
-          });
-      }
-      return;
-    }
-
-    writeSession();
+    db.collection('sleep_studies').doc(state.pid).collection('sessions').add(doc)
+      .then(function() {
+        state.motionSamplesForBackend = [];
+        state.soundLog = [];
+        console.log('Data synced to Firestore:', activeMode);
+        openWakeSurveyIfConfigured(doc, built.surveyData);
+      })
+      .catch(function(err) {
+        console.error(err);
+        showSnackbar('Sync Error: Check Connection');
+        openWakeSurveyIfConfigured(doc, built.surveyData);
+      });
   }
 
   // Handles wake up.

@@ -25,3 +25,4 @@ __pycache__/
 
 ## Local EEG raw exports
 plot/EEG_*.csv
+plot/EEG/*.csv

@@ -98,7 +98,7 @@ Interpretation:
 Related fields persisted for analysis:
 - `motion80pctCutoffCurrent` (latest dynamic cutoff),
 - `motion80pctCutoffSeries` (history of cutoff values),
-- `motion_per_second_series` in exported dynamic thresholds payload.
+- `motion_per_second_series` (top-level Firestore session field).
 
 ### How motion value is computed each second
 

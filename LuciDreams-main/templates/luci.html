@@ -892,11 +892,24 @@
     return !!(ENABLE_FAKE_REM_TEST && state.fakeRemTestActive && state.fakeTestSequenceActive);
   }
   // --- END TEMP TEST HARNESS ---
+  // Returns true when a train actually delivered at least one cue.
+  function trainHasDeliveredCue(train) {
+    if (!train) return false;
+    var disruptivePlayed = !!(train.disruptive && train.disruptive.took_place);
+    var cues = (train.induction && train.induction.cues) || [];
+    var inductionPlayed = cues.some(function(c) { return !!(c && c.took_place); });
+    return disruptivePlayed || inductionPlayed;
+  }
+  // Counts trains that actually delivered at least one cue.
+  function countDeliveredTrains(trains) {
+    var list = trains || [];
+    return list.reduce(function(sum, tr) { return sum + (trainHasDeliveredCue(tr) ? 1 : 0); }, 0);
+  }
   function totalNightTrainCount() {
     var finished = (state.remEpisodes || []).reduce(function(sum, ep) {
-      return sum + (((ep && ep.trains) && ep.trains.length) || 0);
+      return sum + countDeliveredTrains((ep && ep.trains) || []);
     }, 0);
-    var current = state.inRemEpisode ? ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) : 0;
+    var current = state.inRemEpisode ? countDeliveredTrains(state.currentEpisodeTrains || []) : 0;
     return finished + current;
   }
   // Checks whether has reached night train cap.
@@ -907,7 +920,7 @@
   // Checks whether has reached episode train cap.
   function hasReachedEpisodeTrainCap() {
     if (isFakeConditionSweepModeActive()) return false;
-    return ((state.currentEpisodeTrains && state.currentEpisodeTrains.length) || 0) >= REM_EPISODE_MAX_TRAINS;
+    return countDeliveredTrains(state.currentEpisodeTrains || []) >= REM_EPISODE_MAX_TRAINS;
   }
   // --- TEMP TEST HARNESS  ---
   function setupTemporaryFakeRemForTesting() {
@@ -2483,7 +2496,7 @@ function playFixedBeep75(durationMs, onEnded) {
     for (ei = 0; ei < periods.length; ei++) {
       ep = periods[ei];
       trs = ep.trains || [];
-      total_train_count += trs.length;
+      total_train_count += countDeliveredTrains(trs);
       for (tj = 0; tj < trs.length; tj++) {
         tr = trs[tj];
         var dType = tr && tr.disruptive ? tr.disruptive.condition : null;
@@ -2623,7 +2636,6 @@ function playFixedBeep75(durationMs, onEnded) {
       device_time_start: nightStartIso,
       night_number: night_number,
       epochs_count: state.epochs,
-      motion_80pct_cutoff_current_series: currentSeriesStillnessCutoff,
       // Kept for backward compatibility with older exports/analytics expecting this key.
       motion_80pct_cutoff_first_4h: currentSeriesStillnessCutoff,
       rem_minutes: totalRemMinutes,
@@ -2643,9 +2655,7 @@ function playFixedBeep75(durationMs, onEnded) {
 
     var firestoreDoc = {
       participant_id: state.pid,
-      general: general
-    };
-    firestoreDoc.rem_dynamic_thresholds = {
+      general: general,
       motion_per_second_series: motionSeries
     };
     if (cond !== 0) firestoreDoc.rem_periods = rem_periods;
