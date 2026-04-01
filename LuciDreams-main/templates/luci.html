@@ -686,6 +686,7 @@
   const REM_GATE_SECONDS = 14400;   // 4 hours before REM detection runs
   const REM_SMOOTH_WINDOW_SEC = 180; // Rolling mean over last 180 seconds (updated every second)
   const REM_STILLNESS_PERCENT_OF_SERIES_MEAN = 0.8; // Stillness percentile against the evolving current smoothed-motion series
+  const REM_EXIT_HOLD_SEC = 10; // Exit REM only after 10s continuous non-still
   // REM Episode Manager
   const NIGHT_MAX_TRAINS = 10;
   const REM_EPISODE_MAX_TRAINS = 5;           // Per-REM-episode cap 
@@ -772,6 +773,7 @@
     baselineMotionSum: 0,
     secondsRecorded: 0,
     consecutiveRemSeconds: 0,
+    consecutiveNonStillSeconds: 0,
     inRemEpisode: false,
     remEpisodeStartSeconds: 0,
     remEpisodeStartTime: null,
@@ -2123,6 +2125,7 @@ function playFixedBeep75(durationMs, onEnded) {
         state.inRemEpisode = false;
         state.fakeRemTestActive = false;
         state.consecutiveRemSeconds = 0;
+        state.consecutiveNonStillSeconds = 0;
         state.currentRemEpisodeEntryThreshold = null;
         state.trainPhase = null;
         state.trainStartEpoch = null;
@@ -2166,6 +2169,7 @@ function playFixedBeep75(durationMs, onEnded) {
           state.remEpisodeStartTime = new Date().toISOString();
           state.currentRemEpisodeEntryThreshold = movementNoiseFloor;
           state.inRemEpisode = true;
+          state.consecutiveNonStillSeconds = 0;
           state.currentEpisodeTrains = [];
           state.nextTrainInductionCap = null;
           state.lastCueEpoch = 0;
@@ -2174,18 +2178,24 @@ function playFixedBeep75(durationMs, onEnded) {
         }
       } else {
         if (!isStillSmoothed) {
-          finalizeCurrentRemEpisode();
-        } else if (state.trainPhase === 'induction' && !state.soundRunning && state.lastInductionPlayEpoch != null) {
-          var elapsed = state.secondsRecorded - state.lastInductionPlayEpoch;
-          if (elapsed >= AROUSAL_CHECK_WINDOW_SEC) {
-            var train2 = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
-            if (train2 && train2.induction.arousal_threshold == null) {
-              var nextVol = getNextInductionVolume(state.inductionVolume);
-              if (nextVol <= state.inductionCap + 0.001) {
-                state.inductionVolume = nextVol;
-                playInductionCue();
-              } else {
-                endTrain(false);
+          state.consecutiveNonStillSeconds++;
+          if (state.consecutiveNonStillSeconds >= REM_EXIT_HOLD_SEC) {
+            finalizeCurrentRemEpisode();
+          }
+        } else {
+          state.consecutiveNonStillSeconds = 0;
+          if (state.trainPhase === 'induction' && !state.soundRunning && state.lastInductionPlayEpoch != null) {
+            var elapsed = state.secondsRecorded - state.lastInductionPlayEpoch;
+            if (elapsed >= AROUSAL_CHECK_WINDOW_SEC) {
+              var train2 = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
+              if (train2 && train2.induction.arousal_threshold == null) {
+                var nextVol = getNextInductionVolume(state.inductionVolume);
+                if (nextVol <= state.inductionCap + 0.001) {
+                  state.inductionVolume = nextVol;
+                  playInductionCue();
+                } else {
+                  endTrain(false);
+                }
               }
             }
           }
@@ -2200,6 +2210,7 @@ function playFixedBeep75(durationMs, onEnded) {
       state.consecutive_seconds_above_threshold = 0;
       state.inRemEpisode = false;
       state.consecutiveRemSeconds = 0;
+      state.consecutiveNonStillSeconds = 0;
       state.currentRemEpisodeEntryThreshold = null;
       state.trainPhase = null;
       state.trainStartEpoch = null;
