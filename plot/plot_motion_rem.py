@@ -92,6 +92,8 @@ def main() -> None:
     parser.add_argument("--session-start-boston", default=None, help="HH:MM:SS")
     parser.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both")
     parser.add_argument("--both-phases-only", action="store_true", help="Only keep REM episodes that have both disruptive and induction cues")
+    parser.add_argument("--per-rem-pre-sec", type=int, default=60, help="Seconds shown before REM start in per-rem mode")
+    parser.add_argument("--per-rem-post-sec", type=int, default=60, help="Seconds shown after REM end in per-rem mode")
     parser.add_argument("--output", default=None)
     args = parser.parse_args()
 
@@ -174,7 +176,7 @@ def main() -> None:
         if not rem_eps:
             raise ValueError("No REM episodes with both disruption and induction phases in selected session.")
 
-    cue_color = {"disruptive": "tab:red", "induction": "tab:green"}
+    cue_color = {"disruptive": "red", "induction": "green"}
     outputs = []
 
     if args.plot_mode in ("overview", "both"):
@@ -189,6 +191,13 @@ def main() -> None:
         y_all = [round(sec_to_val[s], 3) for s in sorted_secs if s in sec_to_time and s >= FOUR_HOURS_SECONDS]
         if not x_all:
             raise ValueError("No motion points from 4h onward for overview plot.")
+        # Drop last 30 seconds (awakening period not relevant for overnight trend).
+        trim_n = min(30, len(y_all))
+        if trim_n > 0:
+            y_all = y_all[:-trim_n]
+            x_all = x_all[:-trim_n]
+        if not x_all:
+            raise ValueError("No overview points left after trimming the last 30 values.")
         fig_o, ax_o = plt.subplots(figsize=(14, 6))
         ax_o.plot(x_all, y_all, linewidth=1.2, color="tab:blue", label="motion per second")
         first = True
@@ -198,8 +207,8 @@ def main() -> None:
             if st is None or en is None:
                 continue
             ax_o.axvspan(st, en, alpha=0.22, color="tab:orange", label="REM episode" if first else None)
-            ax_o.axvline(st, linestyle="--", linewidth=1, color="tab:red", alpha=0.8, label="REM start" if first else None)
-            ax_o.axvline(en, linestyle="--", linewidth=1, color="tab:green", alpha=0.8, label="REM end" if first else None)
+            ax_o.axvline(st, linestyle="--", linewidth=1, color="yellow", alpha=0.95, label="REM start" if first else None)
+            ax_o.axvline(en, linestyle="--", linewidth=1, color="black", alpha=0.95, label="REM end" if first else None)
             first = False
         cue_first = {"disruptive": True, "induction": True}
         for ep_idx in cues_by_episode:
@@ -216,6 +225,19 @@ def main() -> None:
                 cue_first[ctype] = False
                 ax_o.axvline(ct, color=cue_color.get(ctype, "tab:purple"), linestyle=":", linewidth=1.0, alpha=0.8, label=label)
                 ax_o.scatter([ct], [round(cv, 3)], color=cue_color.get(ctype, "tab:purple"), s=12, zorder=4)
+        # Zoom y-axis for readability while keeping full peak visibility.
+        y_zoom_ref = sorted(y_all)
+        lo_idx = max(0, int(0.01 * (len(y_zoom_ref) - 1)))
+        hi_idx = max(0, int(0.995 * (len(y_zoom_ref) - 1)))
+        y_lo = y_zoom_ref[lo_idx]
+        y_hi = y_zoom_ref[hi_idx]
+        if y_hi <= y_lo:
+            y_lo = min(y_all)
+            y_hi = max(y_all)
+        y_max = max(y_all)
+        y_upper = max(y_hi, y_max)
+        pad = max(0.5, 0.1 * (y_upper - y_lo if y_upper > y_lo else 1.0))
+        ax_o.set_ylim(max(0.0, y_lo - pad), y_upper + pad)
         ax_o.set_title(f"Motion overview with REM windows | pid={sel_pid} | session_start={sel_start}")
         ax_o.set_xlabel("Time (Boston)")
         ax_o.set_ylabel("motion_per_second")
@@ -247,9 +269,11 @@ def main() -> None:
             ep_idx = ep["episode_index"]
             start_sec = ep["start_sec"]
             end_sec = start_sec + ep["dur_sec"]
+            win_start_sec = max(0, start_sec - max(0, args.per_rem_pre_sec))
+            win_end_sec = end_sec + max(0, args.per_rem_post_sec)
             xs = []
             ys = []
-            for sec in range(start_sec, end_sec + 1):
+            for sec in range(win_start_sec, win_end_sec + 1):
                 if sec not in sec_to_val or sec not in sec_to_time:
                     continue
                 xs.append(sec_to_time[sec])
@@ -259,36 +283,50 @@ def main() -> None:
                 ax.axis("off")
                 continue
             ax.plot(xs, ys, color="tab:blue", linewidth=1.2, marker="o", markersize=2)
-            ax.axvspan(xs[0], xs[-1], alpha=0.12, color="tab:orange")
+            rem_start_t = sec_to_time.get(start_sec)
+            rem_end_t = sec_to_time.get(end_sec)
+            if rem_start_t is not None and rem_end_t is not None:
+                ax.axvspan(rem_start_t, rem_end_t, alpha=0.12, color="tab:orange", label="REM window")
             start_t = sec_to_time.get(start_sec)
             start_v = sec_to_val.get(start_sec)
             if start_t is not None and start_v is not None:
-                ax.axvline(start_t, color="tab:red", linestyle="--", linewidth=1.0, alpha=0.9)
-                ax.scatter([start_t], [round(start_v, 3)], color="tab:red", s=28, zorder=4)
+                ax.axvline(start_t, color="yellow", linestyle="--", linewidth=1.0, alpha=0.95, label="REM start")
+                ax.scatter([start_t], [round(start_v, 3)], color="yellow", s=28, zorder=4, edgecolors="black", linewidths=0.4)
+            end_t = sec_to_time.get(end_sec)
+            end_v = sec_to_val.get(end_sec)
+            if end_t is not None and end_v is not None:
+                ax.axvline(end_t, color="black", linestyle="--", linewidth=1.0, alpha=0.95, label="REM end")
+                ax.scatter([end_t], [round(end_v, 3)], color="black", s=24, zorder=4)
             local_cues = sorted(cues_by_episode.get(ep_idx, []), key=lambda d: d["cue_sec"])
+            cue_first = {"disruptive": True, "induction": True}
             for c in local_cues:
                 cs = c["cue_sec"]
-                if cs < start_sec or cs > end_sec:
+                if cs < win_start_sec or cs > win_end_sec:
                     continue
                 ct = sec_to_time.get(cs)
                 cv = sec_to_val.get(cs)
                 if ct is None or cv is None:
                     continue
                 ccol = cue_color.get(c["cue_type"], "tab:purple")
-                ax.axvline(ct, color=ccol, linestyle=":", linewidth=1.0, alpha=0.9)
+                ctype = c["cue_type"] if c["cue_type"] in cue_color else "induction"
+                clabel = f"{ctype} cue" if cue_first.get(ctype, False) else None
+                cue_first[ctype] = False
+                ax.axvline(ct, color=ccol, linestyle=":", linewidth=1.0, alpha=0.9, label=clabel)
                 ax.scatter([ct], [round(cv, 3)], color=ccol, s=24, zorder=5)
             ax.set_title(f"REM #{ep_idx} | {ep['start_clock']} -> {ep['end_clock']} | dur={ep['dur_sec']}s", fontsize=9)
             ax.set_xlabel("Time (Boston)")
             ax.set_ylabel("motion_per_second")
             ax.grid(True, alpha=0.25)
-            if ep["dur_sec"] <= 120:
+            win_dur = max(1, win_end_sec - win_start_sec)
+            if win_dur <= 120:
                 ax.xaxis.set_major_locator(mdates.SecondLocator(interval=10))
-            elif ep["dur_sec"] <= 300:
+            elif win_dur <= 300:
                 ax.xaxis.set_major_locator(mdates.SecondLocator(interval=30))
             else:
                 ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=1))
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
             ax.tick_params(axis="x", labelrotation=30, labelsize=8)
+            ax.legend(loc="upper right", fontsize=7)
         for j in range(len(rem_eps), len(axes)):
             axes[j].axis("off")
         fig.suptitle(f"REM episode timelines (motion per second) | pid={sel_pid} | session_start={sel_start}", fontsize=11)

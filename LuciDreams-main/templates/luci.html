@@ -798,6 +798,7 @@
     rawSensorSamples: [],
     remEpisodes: [],
     smoothedMotionSeries: [],
+    rawMotionSeries: [],
     smoothedMotionCurrent: null,
     motion80pctCutoffSeries: [],
     motion80pctCutoffCurrent: null,
@@ -2203,6 +2204,7 @@ function playFixedBeep75(durationMs, onEnded) {
     state.motionHistory.push(motionForSecond);
     if (state.summedMotion.length > BUFFER_SIZE) state.summedMotion.shift();
     if (state.motionHistory.length > BUFFER_SIZE) state.motionHistory.shift();
+    state.rawMotionSeries.push(motionForSecond);
 
     if (state.secondsRecorded <= REM_GATE_SECONDS) state.baselineMotionSum += motionForSecond;
 
@@ -2237,14 +2239,15 @@ function playFixedBeep75(durationMs, onEnded) {
 
     if (afterGate) {
       var seriesAll = state.smoothedMotionSeries;
+      var rawSeriesAll = state.rawMotionSeries;
       var smoothedMotion = state.smoothedMotionCurrent;
       var seriesMean = seriesAll.reduce(function(a, b) { return a + b; }, 0) / seriesAll.length;
       var movementNoiseFloor = seriesMean * REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
       var belowCount = seriesAll.reduce(function(count, v) { return count + (smoothedMotion < v ? 1 : 0); }, 0);
       var isStillSmoothed = (belowCount / seriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
       if (state.fakeRemTestActive) isStillSmoothed = true;
-      var rawAboveCount = seriesAll.reduce(function(count, v) { return count + (motionForSecond > v ? 1 : 0); }, 0);
-      var isRawAbove80PercentOfSeries = (rawAboveCount / seriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
+      var rawAboveCount = rawSeriesAll.reduce(function(count, v) { return count + (motionForSecond > v ? 1 : 0); }, 0);
+      var isRawAbove80PercentOfSeries = rawSeriesAll.length > 0 && (rawAboveCount / rawSeriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
 
       // Finalizes current rem episode.
       function finalizeCurrentRemEpisode() {
@@ -2541,6 +2544,7 @@ function playFixedBeep75(durationMs, onEnded) {
     state.motionSamplesForBackend = [];
     state.secondsRecorded = 0;
     state.smoothedMotionSeries = [];
+    state.rawMotionSeries = [];
     state.smoothedMotionCurrent = null;
     state.motion80pctCutoffSeries = [];
     state.motion80pctCutoffCurrent = null;
@@ -2730,7 +2734,6 @@ function playFixedBeep75(durationMs, onEnded) {
       total_train_count += countDeliveredTrains(trs);
       for (tj = 0; tj < trs.length; tj++) {
         tr = trs[tj];
-        var dType = tr && tr.disruptive ? tr.disruptive.condition : null;
         var flatTrain = {
           episode_index: ei,
           train_index: tj,
@@ -2738,7 +2741,7 @@ function playFixedBeep75(durationMs, onEnded) {
           disruptive: tr.disruptive || {},
           induction: tr.induction || { cues: [], arousal_threshold: null }
         };
-        if (dType !== 3) flatTrain.duration_sec = tr.duration_sec != null ? tr.duration_sec : null;
+        flatTrain.duration_sec = tr.duration_sec != null ? tr.duration_sec : null;
         trains_flat.push(flatTrain);
         d = tr.disruptive || {};
         if (d.device_time_start) train_starts.push(d.device_time_start);
@@ -2826,7 +2829,6 @@ function playFixedBeep75(durationMs, onEnded) {
           end_epoch_sec: t.end_epoch_sec != null ? t.end_epoch_sec : null,
           disruptive: {
             start_epoch_sec: d.start_epoch_sec,
-            condition: d.type != null ? d.type : null,
             device_time_start: d.device_time_start || null,
             took_place: !!d.took_place,
             params: d.params || {}
@@ -2859,6 +2861,8 @@ function playFixedBeep75(durationMs, onEnded) {
     var currentSeriesStillnessCutoff = getCurrentSeriesStillnessCutoff();
     // Persist per-second motion amount (not 80th-percentile cutoff series).
     var motionSeries = (state.motionSamplesForBackend || []).slice();
+    // Also persist smoothed rolling-motion series used by REM logic.
+    var smoothedMotionSeries = (state.smoothedMotionSeries || []).slice();
 
     var general = {
       session_type: activeMode,
@@ -2887,9 +2891,13 @@ function playFixedBeep75(durationMs, onEnded) {
     var firestoreDoc = {
       participant_id: state.pid,
       general: general,
-      motion_per_second_series: motionSeries
+      rem_periods_json: JSON.stringify(rem_periods),
+      rem_periods_count: rem_periods.length,
+      motion_per_second_series_json: JSON.stringify(motionSeries),
+      motion_per_second_series_len: motionSeries.length,
+      smoothed_motion_series_json: JSON.stringify(smoothedMotionSeries),
+      smoothed_motion_series_len: smoothedMotionSeries.length
     };
-    if (cond !== 0) firestoreDoc.rem_periods = rem_periods;
 
     return {
       firestoreDoc: firestoreDoc,
@@ -3110,6 +3118,64 @@ function playFixedBeep75(durationMs, onEnded) {
     return String(map[String(pid || 'default')] || '') === String(savedAt || '');
   }
 
+  function getLocalSessionBackupNativeLocationKey(pid) {
+    return 'luci_local_session_backup_native_loc_v1_' + String(pid || 'default');
+  }
+
+  function getBackupFilePathCandidates(pid) {
+    var safePid = String(pid || 'default');
+    return [
+      'session_backup_' + safePid + '.json',
+      'luci_backups/session_backup_' + safePid + '.json'
+    ];
+  }
+
+  function getBackupDirectoryCandidates(FS) {
+    var out = [];
+    var seen = {};
+    function push(v) {
+      var k = String(v);
+      if (seen[k]) return;
+      seen[k] = true;
+      out.push(v);
+    }
+    var Dir = FS && FS.Directory ? FS.Directory : null;
+    if (Dir) {
+      if (Dir.Documents != null) push(Dir.Documents);
+      if (Dir.Data != null) push(Dir.Data);
+      if (Dir.Library != null) push(Dir.Library);
+      if (Dir.Cache != null) push(Dir.Cache);
+    }
+    // Fallback for older bridge payloads that may still expect numeric constants.
+    push(9); // Documents (common mapping)
+    push(1); // Data/Cache depending plugin version
+    return out;
+  }
+
+  function loadLastBackupNativeLocation(pid) {
+    try {
+      var raw = localStorage.getItem(getLocalSessionBackupNativeLocationKey(pid));
+      var obj = raw ? JSON.parse(raw) : null;
+      if (!obj || !obj.path) return null;
+      return obj;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveLastBackupNativeLocation(pid, path, directory) {
+    try {
+      localStorage.setItem(getLocalSessionBackupNativeLocationKey(pid), JSON.stringify({
+        path: path,
+        directory: directory
+      }));
+    } catch (e) {}
+  }
+
+  function clearLastBackupNativeLocation(pid) {
+    try { localStorage.removeItem(getLocalSessionBackupNativeLocationKey(pid)); } catch (e) {}
+  }
+
   function saveLocalSessionBackup(reason) {
     if (!state.pid) return Promise.resolve(false);
     var built = buildSleepSessionPayload('local_backup');
@@ -3127,17 +3193,43 @@ function playFixedBeep75(durationMs, onEnded) {
     var FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
     var isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
     if (isNative && FS && typeof FS.writeFile === 'function') {
-      var filePath = 'luci_backups/session_backup_' + String(state.pid || 'default') + '.json';
-      return FS.writeFile({
-        path: filePath,
-        data: JSON.stringify(snapshot),
-        directory: 1, // Directory.Data
-        encoding: 'utf8',
-        recursive: true
-      }).then(function() {
-        return true;
-      }).catch(function(err) {
-        appendFirebaseSyncFailure('local_backup_write_failed', err, { pid: state.pid || '', reason: reason || '' });
+      var paths = getBackupFilePathCandidates(state.pid);
+      var dirs = getBackupDirectoryCandidates(FS);
+      var attempts = [];
+      var di = 0;
+      var pi = 0;
+      var payload = JSON.stringify(snapshot);
+
+      var tryWrite = function() {
+        if (di >= dirs.length) return Promise.resolve(false);
+        if (pi >= paths.length) { di++; pi = 0; return tryWrite(); }
+        var directory = dirs[di];
+        var path = paths[pi++];
+        return FS.writeFile({
+          path: path,
+          data: payload,
+          directory: directory,
+          encoding: 'utf8'
+        }).then(function() {
+          saveLastBackupNativeLocation(state.pid, path, directory);
+          return true;
+        }).catch(function(err) {
+          attempts.push({
+            path: path,
+            directory: String(directory),
+            message: err && (err.message || err.error || String(err)) || 'unknown'
+          });
+          return tryWrite();
+        });
+      };
+
+      return tryWrite().then(function(ok) {
+        if (ok) return true;
+        appendFirebaseSyncFailure('local_backup_write_failed', null, {
+          pid: state.pid || '',
+          reason: reason || '',
+          attempts: attempts
+        });
         try {
           localStorage.setItem(getLocalSessionBackupStorageKey(state.pid), JSON.stringify(snapshot));
         } catch (e) {}
@@ -3169,14 +3261,44 @@ function playFixedBeep75(durationMs, onEnded) {
     if (!(isNative && FS && typeof FS.readFile === 'function')) {
       return Promise.resolve(fallback);
     }
-    var filePath = 'luci_backups/session_backup_' + String(pid || 'default') + '.json';
-    return FS.readFile({ path: filePath, directory: 1 }).then(function(res) {
-      var text = res && res.data ? String(res.data) : '';
-      if (!text) return fallback;
-      try { return JSON.parse(text); } catch (e) { return fallback; }
-    }).catch(function() {
-      return fallback;
+    var combos = [];
+    var remembered = loadLastBackupNativeLocation(pid);
+    if (remembered && remembered.path) {
+      combos.push({ path: remembered.path, directory: remembered.directory });
+    }
+    var dirs = getBackupDirectoryCandidates(FS);
+    var paths = getBackupFilePathCandidates(pid);
+    dirs.forEach(function(d) {
+      paths.forEach(function(p) {
+        combos.push({ path: p, directory: d });
+      });
     });
+    var seen = {};
+    combos = combos.filter(function(c) {
+      var k = String(c.path) + '|' + String(c.directory);
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+    var idx = 0;
+    var tryRead = function() {
+      if (idx >= combos.length) return Promise.resolve(fallback);
+      var c = combos[idx++];
+      return FS.readFile({ path: c.path, directory: c.directory }).then(function(res) {
+        var text = res && res.data ? String(res.data) : '';
+        if (!text) return tryRead();
+        try {
+          var parsed = JSON.parse(text);
+          saveLastBackupNativeLocation(pid, c.path, c.directory);
+          return parsed;
+        } catch (e) {
+          return tryRead();
+        }
+      }).catch(function() {
+        return tryRead();
+      });
+    };
+    return tryRead();
   }
 
   function clearLocalSessionBackupSnapshot(pid) {
@@ -3186,8 +3308,32 @@ function playFixedBeep75(durationMs, onEnded) {
     var FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
     var isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
     if (!(isNative && FS && typeof FS.deleteFile === 'function')) return Promise.resolve();
-    var filePath = 'luci_backups/session_backup_' + String(pid || 'default') + '.json';
-    return FS.deleteFile({ path: filePath, directory: 1 }).catch(function() {});
+    var combos = [];
+    var remembered = loadLastBackupNativeLocation(pid);
+    if (remembered && remembered.path) combos.push({ path: remembered.path, directory: remembered.directory });
+    var dirs = getBackupDirectoryCandidates(FS);
+    var paths = getBackupFilePathCandidates(pid);
+    dirs.forEach(function(d) {
+      paths.forEach(function(p) {
+        combos.push({ path: p, directory: d });
+      });
+    });
+    var seen = {};
+    combos = combos.filter(function(c) {
+      var k = String(c.path) + '|' + String(c.directory);
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+    var chain = Promise.resolve();
+    combos.forEach(function(c) {
+      chain = chain.then(function() {
+        return FS.deleteFile({ path: c.path, directory: c.directory }).catch(function() {});
+      });
+    });
+    return chain.then(function() {
+      clearLastBackupNativeLocation(pid);
+    });
   }
 
   function recoverBackupToPendingIfNeeded(pid) {
@@ -3301,8 +3447,14 @@ function playFixedBeep75(durationMs, onEnded) {
           state.motionSamplesForBackend = [];
           state.soundLog = [];
           console.log('Data synced to Firestore:', activeMode);
-          flushPendingSleepDocs();
-          openWakeSurveyIfConfigured(doc, built.surveyData);
+          return clearLocalSessionBackupSnapshot(state.pid).then(function() {
+            return flushPendingSleepDocs();
+          }).then(function() {
+            openWakeSurveyIfConfigured(doc, built.surveyData);
+          }).catch(function(err2) {
+            appendFirebaseSyncFailure('post_success_cleanup_failed', err2, { pid: state.pid || '', mode: activeMode || '' });
+            openWakeSurveyIfConfigured(doc, built.surveyData);
+          });
         })
         .catch(function(err) {
           console.error(err);

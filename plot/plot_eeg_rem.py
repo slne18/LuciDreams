@@ -81,6 +81,67 @@ def parse_hms_to_seconds(value: str) -> Optional[float]:
         return None
 
 
+def estimate_sampling_hz(ts: pd.Series) -> Optional[float]:
+    vals = pd.to_datetime(ts, errors="coerce").dropna()
+    if len(vals) < 5:
+        return None
+    diffs = vals.diff().dt.total_seconds().to_numpy()
+    diffs = diffs[np.isfinite(diffs) & (diffs > 0)]
+    if len(diffs) < 5:
+        return None
+    med = float(np.median(diffs))
+    if med <= 0:
+        return None
+    return 1.0 / med
+
+
+def bandpass_notch_filter(series: pd.Series, fs_hz: float, low_hz: float, high_hz: float, notch_hz: float, notch_q: float) -> pd.Series:
+    vals = pd.to_numeric(series, errors="coerce").astype(float).to_numpy()
+    finite = np.isfinite(vals)
+    if finite.sum() < 10:
+        return pd.Series(vals, index=series.index)
+    idx = np.arange(len(vals))
+    interp = np.interp(idx, idx[finite], vals[finite])
+    try:
+        from scipy import signal
+    except Exception:
+        return pd.Series(vals, index=series.index)
+
+    nyq = fs_hz * 0.5
+    lo = max(0.001, float(low_hz))
+    hi = min(float(high_hz), nyq * 0.95)
+    if hi <= lo:
+        return pd.Series(vals, index=series.index)
+    if notch_hz > 0 and notch_hz < nyq * 0.95:
+        b_notch, a_notch = signal.iirnotch(w0=float(notch_hz), Q=float(notch_q), fs=float(fs_hz))
+        interp = signal.filtfilt(b_notch, a_notch, interp, method="pad")
+    b_bp, a_bp = signal.butter(4, [lo, hi], btype="bandpass", fs=float(fs_hz))
+    filt = signal.filtfilt(b_bp, a_bp, interp, method="pad")
+    filt[~finite] = np.nan
+    return pd.Series(filt, index=series.index)
+
+
+def lowpass_filter(series: pd.Series, fs_hz: float, cutoff_hz: float) -> pd.Series:
+    vals = pd.to_numeric(series, errors="coerce").astype(float).to_numpy()
+    finite = np.isfinite(vals)
+    if finite.sum() < 10:
+        return pd.Series(vals, index=series.index)
+    idx = np.arange(len(vals))
+    interp = np.interp(idx, idx[finite], vals[finite])
+    try:
+        from scipy import signal
+    except Exception:
+        return pd.Series(vals, index=series.index)
+    nyq = fs_hz * 0.5
+    cut = min(float(cutoff_hz), nyq * 0.95)
+    if cut <= 0:
+        return pd.Series(vals, index=series.index)
+    b_lp, a_lp = signal.butter(4, cut, btype="lowpass", fs=float(fs_hz))
+    filt = signal.filtfilt(b_lp, a_lp, interp, method="pad")
+    filt[~finite] = np.nan
+    return pd.Series(filt, index=series.index)
+
+
 def choose_rem_session(rem_df: pd.DataFrame, pid: str, session_start_boston: Optional[str]) -> pd.DataFrame:
     d = rem_df[rem_df["pid"].astype(str) == pid].copy()
     if d.empty:
@@ -104,16 +165,40 @@ def main() -> None:
     p.add_argument("--cue-csv", default=DEFAULT_CUE_CSV)
     p.add_argument("--session-start-boston", default=None, help="Optional session_start_boston (HH:MM:SS)")
     p.add_argument("--both-phases-only", action="store_true", help="Keep only REM episodes with both disruptive and induction cues")
-    p.add_argument("--plot-mode", choices=["overview", "per-rem"], default="overview", help="overview: full session; per-rem: one panel per REM episode")
+    p.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both", help="overview: full session; per-rem: one panel per REM episode; both: generate both plots")
     p.add_argument("--max-points", type=int, default=40000, help="Max plotted points in session overview")
+    p.add_argument("--overview-smooth-sec", type=int, default=9, help="Rolling smoothing window (seconds) for overview only; 1 disables extra smoothing")
+    p.add_argument("--bandpass-low-hz", type=float, default=0.5, help="Bandpass low cutoff in Hz")
+    p.add_argument("--bandpass-high-hz", type=float, default=40.0, help="Bandpass high cutoff in Hz")
+    p.add_argument("--notch-hz", type=float, default=60.0, help="Notch frequency in Hz (<=0 disables notch)")
+    p.add_argument("--notch-q", type=float, default=30.0, help="Notch filter Q factor")
+    p.add_argument("--per-rem-lowpass-hz", type=float, default=40.0, help="Low-pass cutoff in Hz for per-REM plotting")
     p.add_argument("--per-rem-pre-sec", type=int, default=60, help="Seconds shown before REM start in per-rem mode")
     p.add_argument("--per-rem-post-sec", type=int, default=60, help="Seconds shown after REM end in per-rem mode")
     p.add_argument("--output", default=None)
     args = p.parse_args()
     output_png = args.output or DEFAULT_OUTPUT_TEMPLATE.format(pid=args.pid)
-    output_dir = os.path.dirname(output_png)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
+    if args.plot_mode == "both":
+        if args.output:
+            root, ext = os.path.splitext(args.output)
+            if not ext:
+                ext = ".png"
+            overview_output_png = f"{root}_overview{ext}"
+            per_rem_output_png = f"{root}_per_rem{ext}"
+        else:
+            overview_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_overview_{args.pid}.png")
+            per_rem_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_per_rem_{args.pid}.png")
+    elif args.plot_mode == "overview":
+        overview_output_png = output_png
+        per_rem_output_png = None
+    else:
+        overview_output_png = None
+        per_rem_output_png = output_png
+    output_targets = [x for x in [overview_output_png, per_rem_output_png] if x]
+    for target in output_targets:
+        out_dir = os.path.dirname(target)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
 
     eeg_csv = args.eeg_csv or os.path.join(EEG_DATA_DIR, f"EEG_{args.pid}.csv")
     if not os.path.exists(eeg_csv):
@@ -162,6 +247,20 @@ def main() -> None:
         parse_dates=["TimeStamp"],
     )
     eeg = eeg.dropna(subset=["TimeStamp"]).sort_values("TimeStamp").reset_index(drop=True)
+    fs_hz = estimate_sampling_hz(eeg["TimeStamp"])
+    filter_applied = False
+    af7_col = "RAW_AF7"
+    af8_col = "RAW_AF8"
+    if fs_hz is not None and fs_hz > 2.5:
+        eeg["RAW_AF7_filt"] = bandpass_notch_filter(
+            eeg["RAW_AF7"], fs_hz, args.bandpass_low_hz, args.bandpass_high_hz, args.notch_hz, args.notch_q
+        )
+        eeg["RAW_AF8_filt"] = bandpass_notch_filter(
+            eeg["RAW_AF8"], fs_hz, args.bandpass_low_hz, args.bandpass_high_hz, args.notch_hz, args.notch_q
+        )
+        af7_col = "RAW_AF7_filt"
+        af8_col = "RAW_AF8_filt"
+        filter_applied = True
     eeg["sec_of_day"] = (
         eeg["TimeStamp"].dt.hour * 3600
         + eeg["TimeStamp"].dt.minute * 60
@@ -197,27 +296,37 @@ def main() -> None:
     )
     sess["elapsed_bin"] = np.floor(sess["elapsed_sec"]).astype(int)
     agg = sess.groupby("elapsed_bin", as_index=False).agg(
-        RAW_AF7=("RAW_AF7", "mean"),
-        RAW_AF8=("RAW_AF8", "mean"),
+        RAW_AF7=(af7_col, "mean"),
+        RAW_AF8=(af8_col, "mean"),
     )
+    if fs_hz is not None and fs_hz > 2.5 and args.per_rem_lowpass_hz > 0:
+        agg["RAW_AF7"] = lowpass_filter(agg["RAW_AF7"], fs_hz, args.per_rem_lowpass_hz)
+        agg["RAW_AF8"] = lowpass_filter(agg["RAW_AF8"], fs_hz, args.per_rem_lowpass_hz)
 
     agg["AF7_plot"] = robust_zscore(agg["RAW_AF7"]).clip(-6, 6)
     agg["AF8_plot"] = robust_zscore(agg["RAW_AF8"]).clip(-6, 6)
+    smooth_win = max(1, int(args.overview_smooth_sec))
+    agg["AF7_overview"] = agg["AF7_plot"].rolling(window=smooth_win, center=True, min_periods=1).mean()
+    agg["AF8_overview"] = agg["AF8_plot"].rolling(window=smooth_win, center=True, min_periods=1).mean()
     if args.max_points > 0 and len(agg) > args.max_points:
         stride = int(math.ceil(len(agg) / float(args.max_points)))
         agg = agg.iloc[::stride].copy()
 
-    cue_color = {"disruptive": "tab:red", "induction": "tab:green"}
+    cue_color = {"disruptive": "red", "induction": "green"}
     rem_episode_ids = set(rem_df["episode_index"].astype(int).tolist())
     cues_sess = cue_df[cue_df["episode_index"].astype(int).isin(rem_episode_ids)].copy()
 
-    if args.plot_mode == "overview":
+    perrem_lp_applied = fs_hz is not None and fs_hz > 2.5 and args.per_rem_lowpass_hz > 0
+
+    if args.plot_mode in ("overview", "both"):
         fig, ax = plt.subplots(figsize=(18, 7))
-        ax.plot(agg["elapsed_bin"], agg["AF7_plot"], color="tab:blue", linewidth=0.8, alpha=0.9, label="AF7 (robust z)")
-        ax.plot(agg["elapsed_bin"], agg["AF8_plot"], color="tab:orange", linewidth=0.8, alpha=0.9, label="AF8 (robust z)")
+        ax.plot(agg["elapsed_bin"], agg["AF7_overview"], color="tab:blue", linewidth=0.9, alpha=0.9, label=f"AF7 (robust z, smooth={smooth_win}s)")
+        ax.plot(agg["elapsed_bin"], agg["AF8_overview"], color="tab:orange", linewidth=0.9, alpha=0.9, label=f"AF8 (robust z, smooth={smooth_win}s)")
 
         # REM windows over full session timeline.
         first_rem_label = True
+        first_rem_start_label = True
+        first_rem_end_label = True
         for _, ep in rem_df.iterrows():
             start_sod = parse_hms_to_seconds(str(ep.get("episode_start_boston", "")))
             end_sod = parse_hms_to_seconds(str(ep.get("episode_end_boston", "")))
@@ -229,11 +338,14 @@ def main() -> None:
                 rem_start_x,
                 rem_end_x,
                 alpha=0.12,
-                color="tab:green",
+                color="tab:orange",
                 label="REM window" if first_rem_label else None,
             )
             first_rem_label = False
-            ax.axvline(rem_start_x, color="tab:red", linestyle="--", linewidth=0.8, alpha=0.55)
+            ax.axvline(rem_start_x, color="yellow", linestyle="--", linewidth=0.9, alpha=0.9, label="REM start" if first_rem_start_label else None)
+            ax.axvline(rem_end_x, color="black", linestyle="--", linewidth=0.9, alpha=0.9, label="REM end" if first_rem_end_label else None)
+            first_rem_start_label = False
+            first_rem_end_label = False
 
         # Cue markers (no text labels by default to keep plot clean/fast).
         for _, c in cues_sess.iterrows():
@@ -251,13 +363,22 @@ def main() -> None:
         ax.set_xticks(ticks)
         ax.set_xticklabels([format_elapsed_hms(t)[:5] for t in ticks], rotation=0)
 
-        ax.set_title(f"EEG session overview with REM windows | pid={args.pid} | start={session_start_hms}")
+        filt_tag = f"bandpass {args.bandpass_low_hz:g}-{args.bandpass_high_hz:g}Hz + notch {args.notch_hz:g}Hz" if filter_applied else "no extra filter"
+        ax.set_title(f"EEG session overview with REM windows | pid={args.pid} | start={session_start_hms} | {filt_tag}")
         ax.set_xlabel("Elapsed from session start (HH:MM)")
         ax.set_ylabel("Normalized EEG (robust z)")
         ax.grid(True, alpha=0.25)
         ax.legend(loc="upper right", fontsize=8)
         fig.tight_layout()
-    else:
+        fig.savefig(overview_output_png, dpi=120)
+        print(f"Saved plot to {overview_output_png}")
+        print(f"REM rows considered: {len(rem_df)}")
+        print(f"Session points plotted: {len(agg)}")
+        if fs_hz is not None:
+            print(f"Estimated sampling rate: {fs_hz:.2f} Hz | filter_applied={filter_applied}")
+        plt.close(fig)
+
+    if args.plot_mode in ("per-rem", "both"):
         rem_plot_df = rem_df.copy()
         n = len(rem_plot_df)
         ncols = 2 if n > 1 else 1
@@ -301,12 +422,14 @@ def main() -> None:
                 continue
             plotted_count += 1
             relx = seg["elapsed_bin"] - win_start_x
-            ax.plot(relx, seg["AF7_plot"], color="tab:blue", linewidth=0.9, alpha=0.9, label="AF7 (robust z)")
-            ax.plot(relx, seg["AF8_plot"], color="tab:orange", linewidth=0.9, alpha=0.9, label="AF8 (robust z)")
+            lp_tag = f", LP {args.per_rem_lowpass_hz:g}Hz" if perrem_lp_applied else ""
+            ax.plot(relx, seg["AF7_plot"], color="tab:blue", linewidth=0.9, alpha=0.9, label=f"AF7 (robust z{lp_tag})")
+            ax.plot(relx, seg["AF8_plot"], color="tab:orange", linewidth=0.9, alpha=0.9, label=f"AF8 (robust z{lp_tag})")
             rem_start_rel = rem_start_x - win_start_x
             rem_end_rel = rem_end_x - win_start_x
-            ax.axvspan(rem_start_rel, rem_end_rel, alpha=0.12, color="tab:green", label="REM window")
-            ax.axvline(rem_start_rel, color="tab:red", linestyle="--", linewidth=0.8, alpha=0.7, label="REM start")
+            ax.axvspan(rem_start_rel, rem_end_rel, alpha=0.12, color="tab:orange", label="REM window")
+            ax.axvline(rem_start_rel, color="yellow", linestyle="--", linewidth=0.9, alpha=0.95, label="REM start")
+            ax.axvline(rem_end_rel, color="black", linestyle="--", linewidth=0.9, alpha=0.95, label="REM end")
 
             first_disruptive = True
             first_induction = True
@@ -353,14 +476,11 @@ def main() -> None:
             axes[j].axis("off")
         fig.suptitle(f"EEG per REM phase | pid={args.pid} | session_start={session_start_hms} | plotted={plotted_count}/{len(rem_plot_df)}", fontsize=11)
         fig.tight_layout(rect=[0, 0, 1, 0.97])
-
-    fig.savefig(output_png, dpi=120)
-    print(f"Saved plot to {output_png}")
-    print(f"REM rows considered: {len(rem_df)}")
-    if args.plot_mode == "overview":
-        print(f"Session points plotted: {len(agg)}")
-    else:
+        fig.savefig(per_rem_output_png, dpi=120)
+        print(f"Saved plot to {per_rem_output_png}")
+        print(f"REM rows considered: {len(rem_df)}")
         print(f"REM panels requested: {len(rem_df)}")
+        plt.close(fig)
 
 
 if __name__ == "__main__":

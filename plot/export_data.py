@@ -2,7 +2,9 @@
 # extract_lucidreams_data.py
 
 import csv
+import json
 import os
+import argparse
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import firebase_admin
@@ -65,10 +67,93 @@ def epoch_to_boston_time(night_start_iso, epoch_sec, fallback_iso=None):
     return to_boston_time(fallback_iso)
 
 
+def load_local_session_records(local_file):
+    with open(local_file, "r", encoding="utf-8") as f:
+        raw = f.read().strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        # Some console exports are a single quoted blob with raw newlines and escaped quotes.
+        # Example shape: "<newline>[ ... \"key\": ... ]<newline>"
+        if raw.startswith('"') and raw.endswith('"'):
+            inner = raw[1:-1].replace('\\"', '"')
+            parsed = json.loads(inner)
+        else:
+            raise
+    if isinstance(parsed, str):
+        parsed = json.loads(parsed)
+
+    def get_motion_len(doc):
+        ms = doc.get("motion_per_second_series")
+        if isinstance(ms, list):
+            return len(ms)
+        ms_json = doc.get("motion_per_second_series_json")
+        if isinstance(ms_json, str) and ms_json.strip():
+            try:
+                parsed = json.loads(ms_json)
+                if isinstance(parsed, list):
+                    return len(parsed)
+            except Exception:
+                pass
+        return 0
+
+    def get_rem_len(doc):
+        rp = doc.get("rem_periods")
+        if isinstance(rp, list):
+            return len(rp)
+        rp_json = doc.get("rem_periods_json")
+        if isinstance(rp_json, str) and rp_json.strip():
+            try:
+                parsed = json.loads(rp_json)
+                if isinstance(parsed, list):
+                    return len(parsed)
+            except Exception:
+                pass
+        return 0
+
+    def session_fingerprint(doc):
+        general = doc.get("general", {}) or {}
+        start_iso = str(general.get("device_time_start") or "")
+        return (
+            str(doc.get("participant_id") or ""),
+            start_iso,
+            str(general.get("condition") if general.get("condition") is not None else ""),
+            str(general.get("epochs_count") if general.get("epochs_count") is not None else ""),
+            str(get_motion_len(doc)),
+            str(get_rem_len(doc)),
+        )
+
+    records = []
+    counter = 0
+    seen_fingerprints = set()
+    if isinstance(parsed, list):
+        for item in parsed:
+            docs = []
+            if isinstance(item, dict) and isinstance(item.get("docs"), list):
+                docs = item.get("docs") or []
+            elif isinstance(item, dict) and item.get("participant_id"):
+                docs = [item]
+            for d in docs:
+                if not isinstance(d, dict):
+                    continue
+                fp = session_fingerprint(d)
+                if fp in seen_fingerprints:
+                    continue
+                seen_fingerprints.add(fp)
+                pid = d.get("participant_id") or "unknown_pid"
+                sid = f"local_{counter}"
+                spath = f"sleep_studies/{pid}/sessions/{sid}"
+                records.append((sid, spath, d))
+                counter += 1
+    return records
+
+
 def main():
-    cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
+    parser = argparse.ArgumentParser(description="Export LuciDreams session data to plot CSVs.")
+    parser.add_argument("--local-file", default=None, help="Optional local JSON export file (e.g., output.csv).")
+    args = parser.parse_args()
 
     rem_rows = []
     cue_rows = []
@@ -77,18 +162,34 @@ def main():
 
     participant_ids = set()
     session_count = 0
-    # Use collection-group query to include sessions even when parent sleep_studies/{pid}
-    # doc is missing (Firestore allows subcollections without parent doc body).
-    sessions = db.collection_group("sessions").stream()
+    if args.local_file:
+        sessions = load_local_session_records(args.local_file)
+    else:
+        cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        # Use collection-group query to include sessions even when parent sleep_studies/{pid}
+        # doc is missing (Firestore allows subcollections without parent doc body).
+        sessions = []
+        for sdoc in db.collection_group("sessions").stream():
+            sessions.append((sdoc.id, sdoc.reference.path, sdoc.to_dict() or {}))
 
-    for sdoc in sessions:
+    for session_doc_id, session_path, data in sessions:
         session_count += 1
-        data = sdoc.to_dict() or {}
         general = data.get("general", {}) or {}
         rem_periods = data.get("rem_periods", []) or []
+        if not rem_periods:
+            rem_json = data.get("rem_periods_json", None)
+            if isinstance(rem_json, str) and rem_json.strip():
+                try:
+                    parsed_rem = json.loads(rem_json)
+                    if isinstance(parsed_rem, list):
+                        rem_periods = parsed_rem
+                except Exception:
+                    rem_periods = []
         rem_dynamic_thresholds = data.get("rem_dynamic_thresholds", {}) or {}
         # Path shape: sleep_studies/{pid}/sessions/{session_doc_id}
-        path_parts = sdoc.reference.path.split("/")
+        path_parts = session_path.split("/")
         pid = None
         if len(path_parts) >= 4 and path_parts[-2] == "sessions":
             pid = path_parts[-3]
@@ -101,6 +202,15 @@ def main():
         # New schema stores per-second motion amount at top level.
         # Keep backward compatibility with older nested schemas.
         motion_series = data.get("motion_per_second_series", None)
+        if motion_series is None:
+            motion_json = data.get("motion_per_second_series_json", None)
+            if isinstance(motion_json, str) and motion_json.strip():
+                try:
+                    parsed = json.loads(motion_json)
+                    if isinstance(parsed, list):
+                        motion_series = parsed
+                except Exception:
+                    motion_series = None
         if not motion_series:
             motion_series = rem_dynamic_thresholds.get("motion_per_second_series", None)
         if not motion_series:
@@ -189,7 +299,7 @@ def main():
 
         session_rows.append({
             "pid": pid,
-            "session_doc_id": sdoc.id,
+            "session_doc_id": session_doc_id,
             "session_start_boston": to_boston_time(night_start_iso),
             "session_end_boston": to_boston_time(session_end_iso),
             "has_general": bool(general),
