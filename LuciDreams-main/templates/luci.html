@@ -2806,6 +2806,18 @@ function playFixedBeep75(durationMs, onEnded) {
     return getStillnessCutoffFromSeries(s);
   }
 
+  // Compacts numeric series for storage by rounding to fixed decimals.
+  function compactNumericSeries(series, decimals) {
+    var d = Math.max(0, Math.min(6, parseInt(decimals, 10) || 0));
+    var out = [];
+    (series || []).forEach(function(v) {
+      var n = Number(v);
+      if (!isFinite(n)) return;
+      out.push(Number(n.toFixed(d)));
+    });
+    return out;
+  }
+
   /**
    * Returns { firestoreDoc, surveyData }. Firestore includes full rem_periods (episodes + nested trains).
    * surveyData adds flat trains + motionAvgs for Qualtrics URL (motion breakdowns not stored in Firestore).
@@ -2860,9 +2872,9 @@ function playFixedBeep75(durationMs, onEnded) {
     var roll = computeStimulationRollups(rem_periods);
     var currentSeriesStillnessCutoff = getCurrentSeriesStillnessCutoff();
     // Persist per-second motion amount (not 80th-percentile cutoff series).
-    var motionSeries = (state.motionSamplesForBackend || []).slice();
+    var motionSeries = compactNumericSeries((state.motionSamplesForBackend || []).slice(), 3);
     // Also persist smoothed rolling-motion series used by REM logic.
-    var smoothedMotionSeries = (state.smoothedMotionSeries || []).slice();
+    var smoothedMotionSeries = compactNumericSeries((state.smoothedMotionSeries || []).slice(), 3);
 
     var general = {
       session_type: activeMode,
@@ -3012,10 +3024,40 @@ function playFixedBeep75(durationMs, onEnded) {
     return String(pid || 'unknown') + '_' + String(Date.now()) + '_' + String(Math.floor(Math.random() * 1000000));
   }
 
+  function compactSeriesJsonField(doc, fieldName, lenFieldName, decimals) {
+    if (!doc || typeof doc[fieldName] !== 'string' || !doc[fieldName]) return false;
+    try {
+      var arr = JSON.parse(doc[fieldName]);
+      if (!Array.isArray(arr)) return false;
+      var compact = compactNumericSeries(arr, decimals);
+      doc[fieldName] = JSON.stringify(compact);
+      if (lenFieldName) doc[lenFieldName] = compact.length;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function compactOversizedDocIfPossible(doc) {
+    var next = Object.assign({}, doc || {});
+    var changed = false;
+    changed = compactSeriesJsonField(next, 'motion_per_second_series_json', 'motion_per_second_series_len', 3) || changed;
+    changed = compactSeriesJsonField(next, 'smoothed_motion_series_json', 'smoothed_motion_series_len', 3) || changed;
+    if (!changed) return doc;
+    return next;
+  }
+
   // Returns one or more Firestore docs for upload, chunking large motion series when needed.
   function buildFirestoreUploadDocs(doc) {
     var size = estimateDocSizeBytes(doc);
     if (size <= FIRESTORE_DOC_SOFT_LIMIT_BYTES) return [doc];
+    var compacted = compactOversizedDocIfPossible(doc);
+    if (compacted && compacted !== doc) {
+      var compactedSize = estimateDocSizeBytes(compacted);
+      if (compactedSize <= FIRESTORE_DOC_SOFT_LIMIT_BYTES) return [compacted];
+      doc = compacted;
+      size = compactedSize;
+    }
 
     var motion = (doc && doc.motion_per_second_series && Array.isArray(doc.motion_per_second_series))
       ? doc.motion_per_second_series.slice()
@@ -3125,8 +3167,8 @@ function playFixedBeep75(durationMs, onEnded) {
   function getBackupFilePathCandidates(pid) {
     var safePid = String(pid || 'default');
     return [
-      'session_backup_' + safePid + '.json',
-      'luci_backups/session_backup_' + safePid + '.json'
+      'luci_backups/session_backup_' + safePid + '.json',
+      'session_backup_' + safePid + '.json'
     ];
   }
 
@@ -3141,15 +3183,33 @@ function playFixedBeep75(durationMs, onEnded) {
     }
     var Dir = FS && FS.Directory ? FS.Directory : null;
     if (Dir) {
-      if (Dir.Documents != null) push(Dir.Documents);
       if (Dir.Data != null) push(Dir.Data);
       if (Dir.Library != null) push(Dir.Library);
       if (Dir.Cache != null) push(Dir.Cache);
+      if (Dir.Documents != null) push(Dir.Documents);
     }
     // Fallback for older bridge payloads that may still expect numeric constants.
-    push(9); // Documents (common mapping)
-    push(1); // Data/Cache depending plugin version
+    if (!out.length) {
+      push(1); // Data/Cache depending plugin version
+      push(9); // Documents (common mapping)
+    }
     return out;
+  }
+
+  function ensureBackupParentDirectory(FS, directory, filePath) {
+    if (!FS || typeof FS.mkdir !== 'function') return Promise.resolve();
+    var p = String(filePath || '');
+    var slash = p.lastIndexOf('/');
+    if (slash <= 0) return Promise.resolve();
+    var parent = p.slice(0, slash);
+    if (!parent) return Promise.resolve();
+    return FS.mkdir({
+      path: parent,
+      directory: directory,
+      recursive: true
+    }).catch(function() {
+      return Promise.resolve();
+    });
   }
 
   function loadLastBackupNativeLocation(pid) {
@@ -3205,11 +3265,14 @@ function playFixedBeep75(durationMs, onEnded) {
         if (pi >= paths.length) { di++; pi = 0; return tryWrite(); }
         var directory = dirs[di];
         var path = paths[pi++];
-        return FS.writeFile({
-          path: path,
-          data: payload,
-          directory: directory,
-          encoding: 'utf8'
+        return ensureBackupParentDirectory(FS, directory, path).then(function() {
+          return FS.writeFile({
+            path: path,
+            data: payload,
+            directory: directory,
+            encoding: 'utf8',
+            recursive: true
+          });
         }).then(function() {
           saveLastBackupNativeLocation(state.pid, path, directory);
           return true;
@@ -3362,7 +3425,43 @@ function playFixedBeep75(durationMs, onEnded) {
   function enqueuePendingSleepDoc(docOrDocs) {
     var queue = loadPendingSleepDocs();
     var docs = Array.isArray(docOrDocs) ? docOrDocs : [docOrDocs];
-    queue.push({ docs: docs, saved_at: new Date().toISOString() });
+    var nowIso = new Date().toISOString();
+    var getDocStableKey = function(doc) {
+      if (!doc || typeof doc !== 'object') return 'invalid';
+      var g = doc.general || {};
+      var start = g.device_time_start || doc.device_time_start || '';
+      var end = g.device_time_end || doc.device_time_end || '';
+      var cond = (g.condition != null) ? g.condition : (doc.condition != null ? doc.condition : '');
+      var pid = doc.participant_id || '';
+      var mLen = (doc.motion_per_second_series_len != null)
+        ? doc.motion_per_second_series_len
+        : (Array.isArray(doc.motion_per_second_series) ? doc.motion_per_second_series.length : '');
+      var sLen = (doc.smoothed_motion_series_len != null)
+        ? doc.smoothed_motion_series_len
+        : (Array.isArray(doc.smoothed_motion_series) ? doc.smoothed_motion_series.length : '');
+      var rLen = (doc.rem_periods_count != null)
+        ? doc.rem_periods_count
+        : (Array.isArray(doc.rem_periods) ? doc.rem_periods.length : '');
+      return [pid, start, end, cond, mLen, sLen, rLen].join('|');
+    };
+    var getItemStableKey = function(itemDocs) {
+      var validDocs = (itemDocs || []).filter(function(d) { return !!d; });
+      if (!validDocs.length) return 'empty';
+      return validDocs.map(getDocStableKey).sort().join('||');
+    };
+    var incomingKey = getItemStableKey(docs);
+    var replaced = false;
+    for (var i = 0; i < queue.length; i++) {
+      var existingDocs = [];
+      if (queue[i] && Array.isArray(queue[i].docs)) existingDocs = queue[i].docs;
+      else if (queue[i] && queue[i].doc) existingDocs = [queue[i].doc];
+      if (getItemStableKey(existingDocs) === incomingKey) {
+        queue[i] = { docs: docs, saved_at: nowIso };
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) queue.push({ docs: docs, saved_at: nowIso });
     if (queue.length > 10) queue = queue.slice(queue.length - 10);
     savePendingSleepDocs(queue);
   }
@@ -3379,8 +3478,12 @@ function playFixedBeep75(durationMs, onEnded) {
       var pOne = Promise.resolve();
       docs.forEach(function(d) {
         if (!d || !d.participant_id) return;
-        pOne = pOne.then(function() {
-          return db.collection('sleep_studies').doc(String(d.participant_id)).collection('sessions').add(d);
+        var uploadDocs = buildFirestoreUploadDocs(d);
+        if (!uploadDocs || !uploadDocs.length) return;
+        uploadDocs.forEach(function(u) {
+          pOne = pOne.then(function() {
+            return db.collection('sleep_studies').doc(String((u && u.participant_id) || d.participant_id)).collection('sessions').add(u);
+          });
         });
       });
       return pOne;
