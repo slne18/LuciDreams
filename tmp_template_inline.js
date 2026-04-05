@@ -1,344 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LuciDreams Web v2026</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>
-    /* Flutter / Material 3 inspired dark theme */
-    :root {
-      --bg-dark: #0d1117;
-      --bg-gradient-end: #161b22;
-      --surface: #21262d;
-      --surface-elevated: #30363d;
-      --surface-overlay: #484f58;
-      --primary: #58a6ff;
-      --primary-container: rgba(88, 166, 255, 0.16);
-      --primary-accent: #79c0ff;
-      --green-accent: #3fb950;
-      --green-container: rgba(63, 185, 80, 0.16);
-      --red-accent: #f85149;
-      --red-container: rgba(248, 81, 73, 0.16);
-      --orange-accent: #d29922;
-      --orange-container: rgba(210, 153, 34, 0.16);
-      --text: #f0f6fc;
-      --text-muted: #8b949e;
-      --text-tertiary: #6e7681;
-      --outline: rgba(255,255,255,0.12);
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 16px;
-      --radius-xl: 20px;
-      --radius-full: 9999px;
-      --elevation-1: 0 1px 2px rgba(0,0,0,0.24);
-      --elevation-2: 0 4px 12px rgba(0,0,0,0.32);
-      --elevation-3: 0 8px 24px rgba(0,0,0,0.4);
-      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    body.luci {
-      background: linear-gradient(180deg, var(--bg-dark) 0%, var(--bg-gradient-end) 100%);
-      color: var(--text);
-      font-family: "Segoe UI", "Roboto", -apple-system, BlinkMacSystemFont, sans-serif;
-      min-height: 100vh;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      text-align: center;
-      box-sizing: border-box;
-      -webkit-font-smoothing: antialiased;
-    }
-    .luci .app-bar {
-      width: 100%;
-      padding: 20px 20px 18px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--outline);
-      box-shadow: var(--elevation-1);
-      text-align: center;
-      font-size: 1.375rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      color: var(--text);
-    }
-    .luci .content {
-      flex: 1;
-      width: 100%;
-      max-width: 440px;
-      padding: 24px 20px 32px;
-      box-sizing: border-box;
-    }
-    .luci .step-content {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 20px;
-      background: var(--surface);
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--outline);
-      box-shadow: var(--elevation-2);
-      padding: 28px 24px 32px;
-      min-height: 200px;
-    }
-    .luci .step-content.training-layout {
-      background: transparent;
-      border: none;
-      box-shadow: none;
-    }
-    .luci input[type="text"] {
-      width: 100%;
-      max-width: 280px;
-      padding: 14px 18px;
-      font-size: 1rem;
-      background: var(--surface-elevated);
-      border: 1.5px solid var(--outline);
-      border-radius: var(--radius-md);
-      color: var(--text);
-      text-align: center;
-      box-sizing: border-box;
-      transition: border-color var(--transition), box-shadow var(--transition);
-    }
-    .luci input[type="text"]:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px var(--primary-container);
-    }
-    .luci input[type="text"]::placeholder {
-      color: var(--text-tertiary);
-    }
-    .luci textarea {
-      font-family: inherit;
-      font-size: 0.9375rem;
-      background: var(--surface-elevated);
-      border: 1.5px solid var(--outline);
-      border-radius: var(--radius-md);
-      color: var(--text);
-      transition: border-color var(--transition), box-shadow var(--transition);
-    }
-    .luci textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px var(--primary-container);
-    }
-    .luci .btn {
-      padding: 14px 28px;
-      font-size: 1rem;
-      font-weight: 600;
-      border: none;
-      border-radius: var(--radius-full);
-      cursor: pointer;
-      background: var(--primary);
-      color: #0d1117;
-      box-shadow: var(--elevation-1);
-      transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
-      min-height: 48px;
-    }
-    .luci .btn:hover { box-shadow: 0 4px 12px rgba(88, 166, 255, 0.35); }
-    .luci .btn:active { transform: scale(0.98); }
-    .luci .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    .luci .btn-green {
-      background: var(--green-accent);
-      color: #0d1117;
-    }
-    .luci .btn-green:hover { box-shadow: 0 4px 12px rgba(63, 185, 80, 0.35); }
-    .luci .btn-red {
-      background: var(--red-accent);
-      color: #fff;
-    }
-    .luci .btn-red:hover { box-shadow: 0 4px 12px rgba(248, 81, 73, 0.4); }
-    .luci .btn-orange {
-      background: var(--orange-accent);
-      color: #0d1117;
-    }
-    .luci .btn-orange:hover { box-shadow: 0 4px 12px rgba(210, 153, 34, 0.35); }
-    .luci .text-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      line-height: 1.4;
-      color: var(--text);
-    }
-    .luci .text-body {
-      font-size: 0.9375rem;
-      line-height: 1.6;
-      color: var(--text-muted);
-    }
-    .luci .text-center { text-align: center; }
-    .luci .icon-lg {
-      font-size: 3rem;
-      margin-bottom: 4px;
-      line-height: 1;
-    }
-    .luci .divider {
-      width: 100%;
-      height: 1px;
-      background: var(--outline);
-      margin: 8px 0;
-    }
-    .luci .row {
-      display: flex;
-      flex-direction: row;
-      gap: 12px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .luci .volume-display { font-size: 2.5rem; font-weight: 300; letter-spacing: -0.02em; }
-    .luci .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid var(--outline);
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .luci .voice-rec-block {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-      width: 100%;
-      margin-top: 12px;
-      background: transparent !important;
-    }
-    .luci .voice-rec-block .voice-rec-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      background: transparent !important;
-    }
-    .luci .voice-rec-block .voice-duration {
-      font-variant-numeric: tabular-nums;
-      font-size: 0.95rem;
-      color: var(--red-accent);
-      min-width: 4ch;
-      text-align: center;
-      background: transparent !important;
-    }
-    .luci .voice-rec-block .btn {
-      background: var(--primary) !important;
-      color: #0d1117 !important;
-    }
-    .luci .voice-rec-block .btn-red {
-      background: var(--red-accent) !important;
-      color: #fff !important;
-    }
-    .luci .training-wave {
-      width: 220px;
-      height: 72px;
-      margin: 14px auto 8px auto;
-      border-radius: 14px;
-      background-image: repeating-linear-gradient(
-        90deg,
-        rgba(99, 102, 241, 0.95) 0 8px,
-        rgba(148, 163, 184, 0.12) 8px 14px,
-        rgba(34, 197, 94, 0.9) 14px 22px,
-        rgba(148, 163, 184, 0.12) 22px 28px,
-        rgba(59, 130, 246, 0.95) 28px 36px,
-        rgba(148, 163, 184, 0.12) 36px 42px
-      );
-      animation: trainingPulse 1.2s ease-in-out infinite;
-    }
-    @keyframes trainingPulse {
-      0%, 100% { transform: scaleY(0.86); opacity: 0.7; }
-      50% { transform: scaleY(1.04); opacity: 1; }
-    }
-    .luci .training-controls {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      margin: 8px 0 6px 0;
-      background: transparent;
-      border: none;
-      box-shadow: none;
-    }
-    .luci .icon-btn {
-      width: 42px;
-      height: 42px;
-      border-radius: 50%;
-      border: 1px solid var(--outline);
-      background: transparent;
-      appearance: none;
-      -webkit-appearance: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      cursor: pointer;
-      user-select: none;
-      transition: transform 0.12s ease, filter 0.12s ease;
-    }
-    .luci .icon-btn:active {
-      transform: scale(0.96);
-      filter: brightness(0.95);
-    }
-    .luci .icon-btn-white {
-      background: #fff;
-      color: #111827;
-    }
-    .luci .icon-btn-red {
-      background: var(--red-accent);
-      color: #fff;
-      border-color: rgba(239, 68, 68, 0.65);
-    }
-    .luci .pause-glyph {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-    }
-    .luci .pause-glyph .bar {
-      width: 4px;
-      height: 14px;
-      border-radius: 1px;
-      background: #fff;
-      display: inline-block;
-    }
-    .luci .play-glyph {
-      width: 0;
-      height: 0;
-      border-top: 8px solid transparent;
-      border-bottom: 8px solid transparent;
-      border-left: 12px solid #fff;
-      margin-left: 2px;
-      display: inline-block;
-    }
-    .luci .hidden { display: none !important; }
-    .luci .snackbar {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--surface-elevated);
-      color: var(--text);
-      padding: 14px 24px;
-      border-radius: var(--radius-lg);
-      font-size: 0.9375rem;
-      font-weight: 500;
-      box-shadow: var(--elevation-3);
-      border: 1px solid var(--outline);
-      z-index: 1000;
-    }
-  </style>
-</head>
-<body class="luci">
-  <header class="app-bar">LuciDreams Web v2026</header>
-  <main class="content">
-    <div class="step-content" id="stepContent"><p class="text-body">Loading…</p></div>
-  </main>
-  <div id="snackbar" class="snackbar hidden" aria-live="polite"></div>
 
-  <script src="{{ url_for('static', filename='NoSleep.js') }}"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
-  <script src="{{ url_for('static', filename='firebase-config.js') }}"></script>
-  <script>
+
+
+
+
+
 (function() {
   'use strict';
 
@@ -2455,11 +2120,20 @@ function playFixedBeep75(durationMs, onEnded) {
   // Handles start sequence.
   function handleStartSequence() {
     function applyBaselineAndProceed(savedBaseline) {
+      if (savedBaseline != null && savedBaseline > 0) {
+        state.userMinVolume = savedBaseline;
+        state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
+        state.finalSleepVolume = savedBaseline;
+        state.baselineSliderVolume = Math.min(1, Math.max(0.01, savedBaseline));
+        state.appStep = 4;
+        render();
+        return;
+      }
       fetchCurrentSystemVolume().then(function(vNow) {
-        state.observedSystemVolume = (vNow != null) ? vNow : null;
-        state.baselineSetObservedSystemVolume = (vNow != null) ? vNow : null;
-        var baseline = (savedBaseline != null && savedBaseline > 0) ? savedBaseline : 0.5;
+        var baseline = (vNow != null) ? vNow : 0.5;
         baseline = Math.max(0.01, Math.min(1, baseline));
+        state.observedSystemVolume = baseline;
+        state.baselineSetObservedSystemVolume = baseline;
         state.userMinVolume = baseline;
         state.titrationCeiling = Math.min(1, baseline + USER_MIN_VOLUME_CEILING_DELTA);
         state.finalSleepVolume = baseline;
@@ -2925,7 +2599,9 @@ function playFixedBeep75(durationMs, onEnded) {
       night_max_trains: NIGHT_MAX_TRAINS,
       total_trains_delivered: roll.total_train_count,
       app_version: 'luci2026',
-      user_set_phone_volume: state.baselineSetObservedSystemVolume != null ? Number(state.baselineSetObservedSystemVolume) : null
+      calibration_selected_volume: state.finalSleepVolume != null ? Number(state.finalSleepVolume) : null,
+      calibration_observed_system_volume: state.baselineSetObservedSystemVolume != null ? Number(state.baselineSetObservedSystemVolume) : null,
+      latest_observed_system_volume: state.observedSystemVolume != null ? Number(state.observedSystemVolume) : null
     };
 
     var firestoreDoc = {
@@ -3968,16 +3644,32 @@ function playFixedBeep75(durationMs, onEnded) {
         break;
       }
       case 2: {
-        var needsMotionActivation = !getMotionGranted(state.pid);
+        if (getMotionGranted(state.pid)) {
+          var savedBaseline = loadBaselineVolume(state.pid);
+          if (savedBaseline != null && savedBaseline > 0) {
+            state.userMinVolume = savedBaseline;
+            state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
+            state.finalSleepVolume = savedBaseline;
+            state.baselineSliderVolume = Math.min(1, Math.max(0.01, savedBaseline));
+          } else {
+            state.userMinVolume = 0.5;
+            state.titrationCeiling = Math.min(1, 0.5 + USER_MIN_VOLUME_CEILING_DELTA);
+            state.finalSleepVolume = 0.5;
+            state.baselineSliderVolume = 0.5;
+            saveBaselineVolume(state.pid, 0.5);
+            state.baselineSetObservedSystemVolume = 0.5;
+          }
+          state.appStep = 4;
+          render();
+          break;
+        }
         container.appendChild(el('p', { className: 'icon-lg' }, ['🔐']));
         container.appendChild(el('p', { className: 'text-title', style: { color: 'var(--orange-accent)', fontWeight: 'bold' } }, ['IMPORTANT: Your screen must stay ON.']));
-        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.\n3. Set the volume to 50% (with the physical buttons or the Control Center slider).']));
+        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab. \n3. Set your phone volume to 50% (with the physical buttons or the Control Center slider).']));
         container.appendChild(el('div', { className: 'divider' }));
-        if (needsMotionActivation) {
-          container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));
-        }
+        container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));
         container.appendChild(el('div', { style: { height: '40px' } }));
-        container.appendChild(el('button', { className: 'btn', onClick: handleStartSequence }, [needsMotionActivation ? 'Allow motion sensor' : 'Continue']));
+        container.appendChild(el('button', { className: 'btn', onClick: handleStartSequence }, ['Allow motion sensor']));
         break;
       }
       case 4: {
@@ -4037,6 +3729,4 @@ function playFixedBeep75(durationMs, onEnded) {
   }
   runWhenReady();
 })();
-  </script>
-</body>
-</html>
+  

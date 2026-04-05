@@ -829,6 +829,8 @@
     consecutive_seconds_above_threshold: 0,
     userMinVolume: null,
     baselineSliderVolume: 0.1,
+    observedSystemVolume: null,
+    baselineSetObservedSystemVolume: null,
     tonight_condition: null,
     hasVoiceRecording: false,
     // Arousal threshold (sound 0-1) from LD induction, persisted across nights
@@ -2452,33 +2454,28 @@ function playFixedBeep75(durationMs, onEnded) {
 
   // Handles start sequence.
   function handleStartSequence() {
+    function applyBaselineAndProceed(savedBaseline) {
+      fetchCurrentSystemVolume().then(function(vNow) {
+        state.observedSystemVolume = (vNow != null) ? vNow : null;
+        state.baselineSetObservedSystemVolume = (vNow != null) ? vNow : null;
+        var baseline = (savedBaseline != null && savedBaseline > 0) ? savedBaseline : 0.5;
+        baseline = Math.max(0.01, Math.min(1, baseline));
+        state.userMinVolume = baseline;
+        state.titrationCeiling = Math.min(1, baseline + USER_MIN_VOLUME_CEILING_DELTA);
+        state.finalSleepVolume = baseline;
+        state.baselineSliderVolume = baseline;
+        saveBaselineVolume(state.pid, baseline);
+        state.appStep = 4;
+        render();
+      });
+    }
     requestMotionPermission().then(function(result) {
       if (result === 'granted') enableNoSleep();
       setMotionGranted(state.pid);
-      var savedBaseline = loadBaselineVolume(state.pid);
-      if (savedBaseline != null && savedBaseline > 0) {
-        state.userMinVolume = savedBaseline;
-        state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
-        state.finalSleepVolume = savedBaseline;
-        state.baselineSliderVolume = Math.min(1, Math.max(0.01, savedBaseline));
-        state.appStep = 4;
-      } else {
-        state.appStep = 3;
-        state.baselineSliderVolume = state.userMinVolume != null ? Math.min(1, Math.max(0.01, state.userMinVolume)) : 0.1;
-      }
-      render();
+      applyBaselineAndProceed(loadBaselineVolume(state.pid));
     }).catch(function() {
       setMotionGranted(state.pid);
-      var savedBaseline = loadBaselineVolume(state.pid);
-      if (savedBaseline != null && savedBaseline > 0) {
-        state.userMinVolume = savedBaseline;
-        state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
-        state.finalSleepVolume = savedBaseline;
-        state.appStep = 4;
-      } else {
-        state.appStep = 3;
-      }
-      render();
+      applyBaselineAndProceed(loadBaselineVolume(state.pid));
     });
   }
 
@@ -2487,6 +2484,35 @@ function playFixedBeep75(durationMs, onEnded) {
     var Plugins = window.Capacitor && window.Capacitor.Plugins;
     if (!Plugins) return null;
     return Plugins.VolumeButtons || Plugins.VolumeControl || null;
+  }
+
+  function normalizeSystemVolumeValue(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return null;
+    if (n > 1.0001 && n <= 100) n = n / 100;
+    if (n < 0) n = 0;
+    if (n > 1) n = 1;
+    return n;
+  }
+
+  function fetchCurrentSystemVolume() {
+    var VP = getVolumePlugin();
+    if (!VP) return Promise.resolve(null);
+    if (typeof VP.getVolume === 'function') {
+      return VP.getVolume().then(function(res) {
+        if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
+        if (typeof res === 'number') return normalizeSystemVolumeValue(res);
+        return null;
+      }).catch(function() { return null; });
+    }
+    if (typeof VP.getCurrentVolume === 'function') {
+      return VP.getCurrentVolume().then(function(res) {
+        if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
+        if (typeof res === 'number') return normalizeSystemVolumeValue(res);
+        return null;
+      }).catch(function() { return null; });
+    }
+    return Promise.resolve(null);
   }
 
   // Clears volume watch.
@@ -2506,6 +2532,7 @@ function playFixedBeep75(durationMs, onEnded) {
     state.userMinVolume = v;
     state.titrationCeiling = Math.min(1, v + USER_MIN_VOLUME_CEILING_DELTA);
     state.finalSleepVolume = v;
+    state.baselineSetObservedSystemVolume = state.observedSystemVolume != null ? state.observedSystemVolume : null;
     saveBaselineVolume(state.pid, v);
     state.appStep = 4;
     render();
@@ -2897,7 +2924,8 @@ function playFixedBeep75(durationMs, onEnded) {
       native_api_status: buildNativeApiStatusObject(),
       night_max_trains: NIGHT_MAX_TRAINS,
       total_trains_delivered: roll.total_train_count,
-      app_version: 'luci2026'
+      app_version: 'luci2026',
+      user_set_phone_volume: state.baselineSetObservedSystemVolume != null ? Number(state.baselineSetObservedSystemVolume) : null
     };
 
     var firestoreDoc = {
@@ -3047,6 +3075,85 @@ function playFixedBeep75(durationMs, onEnded) {
     return next;
   }
 
+  function parseJsonArraySafe(value) {
+    if (typeof value !== 'string' || !value) return [];
+    try {
+      var arr = JSON.parse(value);
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function sliceByPart(arr, partIndex, partCount) {
+    if (!Array.isArray(arr) || !arr.length || partCount <= 0) return [];
+    var start = Math.floor((partIndex * arr.length) / partCount);
+    var end = Math.floor(((partIndex + 1) * arr.length) / partCount);
+    return arr.slice(start, end);
+  }
+
+  function buildJsonSplitDocs(doc) {
+    var motion = parseJsonArraySafe(doc && doc.motion_per_second_series_json);
+    var smooth = parseJsonArraySafe(doc && doc.smoothed_motion_series_json);
+    var rem = parseJsonArraySafe(doc && doc.rem_periods_json);
+    if (!motion.length && !smooth.length && !rem.length) return null;
+
+    var groupId = generateSessionGroupId(doc && doc.participant_id);
+    var maxParts = 12;
+    for (var parts = 2; parts <= maxParts; parts++) {
+      var candidate = [];
+      var allFit = true;
+      for (var i = 0; i < parts; i++) {
+        var motionSlice = sliceByPart(motion, i, parts);
+        var smoothSlice = sliceByPart(smooth, i, parts);
+        var remSlice = sliceByPart(rem, i, parts);
+        var outDoc;
+        if (i === 0) {
+          outDoc = Object.assign({}, doc, {
+            session_group_id: groupId,
+            session_chunked: true,
+            session_split: true,
+            session_part_index: i,
+            session_part_count: parts,
+            motion_per_second_series_json: JSON.stringify(motionSlice),
+            motion_per_second_series_len: motionSlice.length,
+            smoothed_motion_series_json: JSON.stringify(smoothSlice),
+            smoothed_motion_series_len: smoothSlice.length,
+            rem_periods_json: JSON.stringify(remSlice),
+            rem_periods_count: remSlice.length
+          });
+        } else {
+          outDoc = {
+            participant_id: doc.participant_id,
+            session_group_id: groupId,
+            session_chunked: true,
+            session_chunk_only: true,
+            session_split: true,
+            session_part_index: i,
+            session_part_count: parts,
+            device_time_start: doc && doc.general ? doc.general.device_time_start : null,
+            device_time_end: doc && doc.general ? doc.general.device_time_end : null,
+            condition: doc && doc.general ? doc.general.condition : null,
+            motion_per_second_series_json: JSON.stringify(motionSlice),
+            motion_per_second_series_len: motionSlice.length,
+            smoothed_motion_series_json: JSON.stringify(smoothSlice),
+            smoothed_motion_series_len: smoothSlice.length,
+            rem_periods_json: JSON.stringify(remSlice),
+            rem_periods_count: remSlice.length
+          };
+        }
+        var partSize = estimateDocSizeBytes(outDoc);
+        if (partSize > FIRESTORE_DOC_SOFT_LIMIT_BYTES) {
+          allFit = false;
+          break;
+        }
+        candidate.push(outDoc);
+      }
+      if (allFit && candidate.length) return candidate;
+    }
+    return null;
+  }
+
   // Returns one or more Firestore docs for upload, chunking large motion series when needed.
   function buildFirestoreUploadDocs(doc) {
     var size = estimateDocSizeBytes(doc);
@@ -3058,6 +3165,9 @@ function playFixedBeep75(durationMs, onEnded) {
       doc = compacted;
       size = compactedSize;
     }
+
+    var jsonSplitDocs = buildJsonSplitDocs(doc);
+    if (jsonSplitDocs && jsonSplitDocs.length) return jsonSplitDocs;
 
     var motion = (doc && doc.motion_per_second_series && Array.isArray(doc.motion_per_second_series))
       ? doc.motion_per_second_series.slice()
@@ -3498,7 +3608,6 @@ function playFixedBeep75(durationMs, onEnded) {
       console.warn('Pending flush failed:', err && (err.code || err.message || err));
     });
   }
-*** End of File
 
   function ensureAuthThen(run) {
     if (typeof firebase !== 'undefined' && firebase.auth) {
@@ -3859,84 +3968,16 @@ function playFixedBeep75(durationMs, onEnded) {
         break;
       }
       case 2: {
-        if (getMotionGranted(state.pid)) {
-          var savedBaseline = loadBaselineVolume(state.pid);
-          if (savedBaseline != null && savedBaseline > 0) {
-            state.userMinVolume = savedBaseline;
-            state.titrationCeiling = Math.min(1, savedBaseline + USER_MIN_VOLUME_CEILING_DELTA);
-            state.finalSleepVolume = savedBaseline;
-            state.baselineSliderVolume = Math.min(1, Math.max(0.01, savedBaseline));
-            state.appStep = 4;
-          } else {
-            state.appStep = 3;
-            state.baselineSliderVolume = state.userMinVolume != null ? Math.min(1, Math.max(0.01, state.userMinVolume)) : 0.1;
-          }
-          render();
-          break;
-        }
+        var needsMotionActivation = !getMotionGranted(state.pid);
         container.appendChild(el('p', { className: 'icon-lg' }, ['🔐']));
         container.appendChild(el('p', { className: 'text-title', style: { color: 'var(--orange-accent)', fontWeight: 'bold' } }, ['IMPORTANT: Your screen must stay ON.']));
-        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.']));
+        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.\n3. Set volume to 50% (with the physical buttons or the Control Center slider).']));
         container.appendChild(el('div', { className: 'divider' }));
-        container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));
+        if (needsMotionActivation) {
+          container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));
+        }
         container.appendChild(el('div', { style: { height: '40px' } }));
-        container.appendChild(el('button', { className: 'btn', onClick: handleStartSequence }, ['Allow motion sensor']));
-        break;
-      }
-      case 3: {
-        container.appendChild(el('p', { className: 'text-body', style: { marginBottom: '12px' } }, [
-          'Set your phone volume to approximately 50% (you can use physical buttons or the Control Center slider), then click Continue.'
-        ]));
-        var initialVol = state.baselineSliderVolume != null ? Math.max(0, Math.min(1, state.baselineSliderVolume)) : 0.1;
-        state.baselineSliderVolume = initialVol;
-        var volumeBeepTimeout = null;
-        // Applies volume change.
-        function applyVolumeChange(vol) {
-          vol = Math.max(0, Math.min(1, vol != null ? vol : 0));
-          state.baselineSliderVolume = vol;
-          if (volumeBeepTimeout) clearTimeout(volumeBeepTimeout);
-          volumeBeepTimeout = setTimeout(function() {
-            volumeBeepTimeout = null;
-            playBeep(vol, state.beepDurationMs || 150);
-          }, 200);
-        }
-        container.appendChild(el('div', { style: { height: '8px' } }));
-        container.appendChild(el('button', { className: 'btn btn-green', onClick: setBaseline }, ['Continue']));
-        var VP = getVolumePlugin();
-        if (VP && !state._volumeWatchActive) {
-          state._volumeWatchActive = true;
-          // Keep normal system volume behavior on hardware buttons.
-          var options = { suppressVolumeIndicator: false, disableSystemVolumeHandler: false };
-          // New plugin API: watchVolume(options, callback)
-          if (VP.watchVolume) {
-            VP.watchVolume(options, function(a, b) {
-              // Support both callback shapes: (result, err) and (err, result)
-              var err = null;
-              var ev = null;
-              if (a && (a.direction || typeof a.value === 'number')) {
-                ev = a;
-                err = b;
-              } else if (b && (b.direction || typeof b.value === 'number')) {
-                ev = b;
-                err = a;
-              } else {
-                ev = a || b || null;
-              }
-              if (err) return;
-              if (ev && ev.direction) {
-                var delta = ev.direction === 'up' ? CALIBRATION_VOLUME_STEP : -CALIBRATION_VOLUME_STEP;
-                var next = Math.max(0, Math.min(1, (state.baselineSliderVolume != null ? state.baselineSliderVolume : initialVol) + delta));
-                applyVolumeChange(next);
-                return;
-              }
-              if (ev && typeof ev.value === 'number') {
-                applyVolumeChange(ev.value);
-              }
-            }).catch(function() { state._volumeWatchActive = false; });
-          } else {
-            state._volumeWatchActive = false;
-          }
-        }
+        container.appendChild(el('button', { className: 'btn', onClick: handleStartSequence }, [needsMotionActivation ? 'Allow motion sensor' : 'Continue']));
         break;
       }
       case 4: {
