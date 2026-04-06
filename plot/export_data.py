@@ -6,6 +6,7 @@ import json
 import os
 import argparse
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 from zoneinfo import ZoneInfo
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -13,10 +14,12 @@ from firebase_admin import credentials, firestore
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SERVICE_ACCOUNT_PATH = os.path.join(os.path.dirname(BASE_DIR), "lucidreans-firebase-adminsdk-fbsvc-4b27ed98c4.json")
-OUT_REM_CSV = os.path.join(BASE_DIR, "rem_episodes.csv")
-OUT_CUES_CSV = os.path.join(BASE_DIR, "cue_events.csv")
-OUT_CUTOFF_CSV = os.path.join(BASE_DIR, "motion_per_second_series.csv")
-OUT_SESSIONS_CSV = os.path.join(BASE_DIR, "sessions_overview.csv")
+OUT_DIR = os.path.join(BASE_DIR, "data_night")
+OUT_REM_CSV = os.path.join(OUT_DIR, "rem_episodes.csv")
+OUT_CUES_CSV = os.path.join(OUT_DIR, "cue_events.csv")
+OUT_CUTOFF_CSV = os.path.join(OUT_DIR, "motion_per_second_series.csv")
+OUT_SMOOTHED_CSV = os.path.join(OUT_DIR, "motion_smoothed_series.csv")
+OUT_SESSIONS_CSV = os.path.join(OUT_DIR, "sessions_overview.csv")
 BOSTON_TZ = ZoneInfo("America/New_York")
 
 
@@ -153,11 +156,15 @@ def load_local_session_records(local_file):
 def main():
     parser = argparse.ArgumentParser(description="Export LuciDreams session data to plot CSVs.")
     parser.add_argument("--local-file", default=None, help="Optional local JSON export file (e.g., output.csv).")
+    parser.add_argument("--pid", default=None, help="Optional participant filter (e.g., Soso).")
+    parser.add_argument("--night-number", type=int, default=None, help="Optional night number filter (1-based within pid).")
     args = parser.parse_args()
+    os.makedirs(OUT_DIR, exist_ok=True)
 
     rem_rows = []
     cue_rows = []
     motion_rows = []
+    smoothed_rows = []
     session_rows = []
 
     participant_ids = set()
@@ -174,8 +181,48 @@ def main():
         for sdoc in db.collection_group("sessions").stream():
             sessions.append((sdoc.id, sdoc.reference.path, sdoc.to_dict() or {}))
 
+    prepared_sessions = []
     for session_doc_id, session_path, data in sessions:
+        general = data.get("general", {}) or {}
+        # Path shape: sleep_studies/{pid}/sessions/{session_doc_id}
+        path_parts = session_path.split("/")
+        pid = None
+        if len(path_parts) >= 4 and path_parts[-2] == "sessions":
+            pid = path_parts[-3]
+        if not pid:
+            pid = data.get("participant_id")
+        if not pid:
+            pid = "unknown_pid"
+        start_iso = general.get("device_time_start")
+        prepared_sessions.append({
+            "session_doc_id": session_doc_id,
+            "session_path": session_path,
+            "data": data,
+            "pid": pid,
+            "start_iso": start_iso,
+            "start_dt": parse_iso(start_iso),
+        })
+
+    sessions_by_pid = defaultdict(list)
+    for item in prepared_sessions:
+        sessions_by_pid[item["pid"]].append(item)
+
+    for pid_key, plist in sessions_by_pid.items():
+        plist.sort(key=lambda x: (x["start_dt"] or datetime.min.replace(tzinfo=timezone.utc), str(x["session_doc_id"])))
+        for idx, item in enumerate(plist, start=1):
+            item["night_number"] = idx
+
+    for item in prepared_sessions:
+        session_doc_id = item["session_doc_id"]
+        data = item["data"]
+        pid = item["pid"]
+        night_number = item.get("night_number")
+        if args.pid and str(pid) != str(args.pid):
+            continue
+        if args.night_number is not None and int(night_number or -1) != int(args.night_number):
+            continue
         session_count += 1
+        participant_ids.add(pid)
         general = data.get("general", {}) or {}
         rem_periods = data.get("rem_periods", []) or []
         if not rem_periods:
@@ -188,16 +235,6 @@ def main():
                 except Exception:
                     rem_periods = []
         rem_dynamic_thresholds = data.get("rem_dynamic_thresholds", {}) or {}
-        # Path shape: sleep_studies/{pid}/sessions/{session_doc_id}
-        path_parts = session_path.split("/")
-        pid = None
-        if len(path_parts) >= 4 and path_parts[-2] == "sessions":
-            pid = path_parts[-3]
-        if not pid:
-            pid = data.get("participant_id")
-        if not pid:
-            pid = "unknown_pid"
-        participant_ids.add(pid)
 
         # New schema stores per-second motion amount at top level.
         # Keep backward compatibility with older nested schemas.
@@ -216,6 +253,21 @@ def main():
         if not motion_series:
             motion_series = rem_dynamic_thresholds.get("motion_80pct_cutoff_series", []) or []
 
+        smoothed_series = data.get("smoothed_motion_series", None)
+        if smoothed_series is None:
+            smoothed_json = data.get("smoothed_motion_series_json", None)
+            if isinstance(smoothed_json, str) and smoothed_json.strip():
+                try:
+                    parsed_s = json.loads(smoothed_json)
+                    if isinstance(parsed_s, list):
+                        smoothed_series = parsed_s
+                except Exception:
+                    smoothed_series = None
+        if not smoothed_series:
+            smoothed_series = rem_dynamic_thresholds.get("smoothed_motion_series", [])
+        if smoothed_series is None:
+            smoothed_series = []
+
         night_start_iso = general.get("device_time_start")
         session_end_iso = general.get("device_time_end")
         total_trains = 0
@@ -225,12 +277,26 @@ def main():
             point_iso = iso_plus_seconds(night_start_iso, sec_idx)
             motion_rows.append({
                 "pid": pid,
+                "night_number": night_number,
                 "session_start_boston": to_boston_time(night_start_iso),
                 "session_end_boston": to_boston_time(session_end_iso),
                 "second_index": sec_idx,
                 "epoch_sec": sec_idx,
                 "time_boston": to_boston_time(point_iso),
                 "motion_per_second": motion_value,
+            })
+
+        for sec_idx, smoothed_value in enumerate(smoothed_series):
+            point_iso = iso_plus_seconds(night_start_iso, sec_idx)
+            smoothed_rows.append({
+                "pid": pid,
+                "night_number": night_number,
+                "session_start_boston": to_boston_time(night_start_iso),
+                "session_end_boston": to_boston_time(session_end_iso),
+                "second_index": sec_idx,
+                "epoch_sec": sec_idx,
+                "time_boston": to_boston_time(point_iso),
+                "motion_smoothed": smoothed_value,
             })
 
         for ep_idx, ep in enumerate(rem_periods):
@@ -244,6 +310,7 @@ def main():
 
             rem_rows.append({
                 "pid": pid,
+                "night_number": night_number,
                 "session_start_boston": to_boston_time(night_start_iso),
                 "session_end_boston": to_boston_time(session_end_iso),
                 "episode_index": ep_idx,
@@ -265,6 +332,7 @@ def main():
                 # disruptive cue/event (has absolute time in your schema)
                 cue_rows.append({
                     "pid": pid,
+                    "night_number": night_number,
                     "episode_index": ep_idx,
                     "train_index": tr_idx,
                     "cue_type": "disruptive",
@@ -279,26 +347,30 @@ def main():
                     "arousal_detected": None,
                 })
 
-                # induction cues (epoch-based; absolute time reconstructed)
+                # induction cues: prefer direct wall-clock timestamp captured at cue playback.
+                # Fallback to epoch reconstruction for older records.
                 for cue_idx, cue in enumerate(cues):
                     cue_epoch = cue.get("epoch_sec")
                     cue_time_iso = iso_plus_seconds(night_start_iso, cue_epoch)
+                    cue_device_time = cue.get("device_time_start")
 
                     cue_rows.append({
                         "pid": pid,
+                        "night_number": night_number,
                         "episode_index": ep_idx,
                         "train_index": tr_idx,
                         "cue_index": cue_idx,
                         "cue_type": "induction",
                         "took_place": cue.get("took_place"),
                         "epoch_sec": cue_epoch,
-                        "event_time_boston": epoch_to_boston_time(night_start_iso, cue_epoch, cue_time_iso),
+                        "event_time_boston": epoch_to_boston_time(night_start_iso, cue_epoch, cue_device_time or cue_time_iso),
                         "volume": cue.get("volume"),
                         "arousal_detected": cue.get("arousal_detected"),
                     })
 
         session_rows.append({
             "pid": pid,
+            "night_number": night_number,
             "session_doc_id": session_doc_id,
             "session_start_boston": to_boston_time(night_start_iso),
             "session_end_boston": to_boston_time(session_end_iso),
@@ -313,6 +385,7 @@ def main():
     with open(OUT_REM_CSV, "w", newline="", encoding="utf-8") as f:
         fields = [
             "pid",
+            "night_number",
             "session_start_boston",
             "session_end_boston",
             "episode_index", "episode_start_epoch_sec", "episode_duration_sec",
@@ -327,7 +400,7 @@ def main():
     # Write cue events
     with open(OUT_CUES_CSV, "w", newline="", encoding="utf-8") as f:
         fields = [
-            "pid", "episode_index", "train_index", "cue_index",
+            "pid", "night_number", "episode_index", "train_index", "cue_index",
             "cue_type", "took_place", "epoch_sec", "event_time_boston",
             "volume", "arousal_detected"
         ]
@@ -339,6 +412,7 @@ def main():
     with open(OUT_CUTOFF_CSV, "w", newline="", encoding="utf-8") as f:
         fields = [
             "pid",
+            "night_number",
             "session_start_boston",
             "session_end_boston",
             "second_index",
@@ -350,10 +424,27 @@ def main():
         writer.writeheader()
         writer.writerows(motion_rows)
 
+    # Write smoothed per-second motion values
+    with open(OUT_SMOOTHED_CSV, "w", newline="", encoding="utf-8") as f:
+        fields = [
+            "pid",
+            "night_number",
+            "session_start_boston",
+            "session_end_boston",
+            "second_index",
+            "epoch_sec",
+            "time_boston",
+            "motion_smoothed",
+        ]
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(smoothed_rows)
+
     # Write sessions overview (includes sessions with zero REM/cue/motion rows)
     with open(OUT_SESSIONS_CSV, "w", newline="", encoding="utf-8") as f:
         fields = [
             "pid",
+            "night_number",
             "session_doc_id",
             "session_start_boston",
             "session_end_boston",
@@ -372,6 +463,7 @@ def main():
     print(f"Wrote {OUT_REM_CSV} ({len(rem_rows)} rows)")
     print(f"Wrote {OUT_CUES_CSV} ({len(cue_rows)} rows)")
     print(f"Wrote {OUT_CUTOFF_CSV} ({len(motion_rows)} rows)")
+    print(f"Wrote {OUT_SMOOTHED_CSV} ({len(smoothed_rows)} rows)")
     print(f"Wrote {OUT_SESSIONS_CSV} ({len(session_rows)} rows)")
 
 

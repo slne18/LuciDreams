@@ -1513,6 +1513,7 @@
     var cueRecord = {
       volume: vol,
       epoch_sec: state.secondsRecorded,
+      device_time_start: new Date().toISOString(),
       took_place: true,
       arousal_detected: false
     };
@@ -2877,6 +2878,7 @@ function playFixedBeep75(durationMs, onEnded) {
               return {
                 volume: c.volume,
                 epoch_sec: c.epoch_sec,
+                device_time_start: c.device_time_start || null,
                 took_place: c.took_place,
                 arousal_detected: c.arousal_detected
               };

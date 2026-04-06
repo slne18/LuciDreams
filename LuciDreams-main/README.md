@@ -182,3 +182,69 @@ First time in a project you may need: `gcloud app create` before `gcloud app dep
 ## Requirements
 
 See `requirements.txt`. Main dependencies: Flask, gunicorn (for serving the app). Firebase is loaded in the browser via the SDK scripts in `luci.html`; no Python Firebase dependency.
+
+---
+
+## Data export and plotting
+
+All commands below are run from:
+
+```bash
+cd /Users/solenenoize/Desktop/LuciDreams/plot
+```
+
+### 1) Export CSVs from Firestore
+
+```bash
+python3 export_data.py
+```
+
+Generated files:
+- `sessions_overview.csv`
+- `rem_episodes.csv`
+- `cue_events.csv`
+- `motion_per_second_series.csv`
+- `motion_smoothed_series.csv`
+
+### 2) Export CSVs from a local JSON file
+
+Use this when data is in a local console dump (for example `output2.csv`):
+
+```bash
+python3 export_data.py --local-file "/Users/solenenoize/Desktop/LuciDreams/output2.csv"
+```
+
+### 3) Plot motion (all PIDs in exported CSVs)
+
+```bash
+python3 plot_motion_rem.py --plot-mode both
+```
+
+### 4) Plot motion for a specific PID
+
+```bash
+python3 plot_motion_rem.py --pid Soso --plot-mode both
+```
+
+### 5) Plot EEG (all standard defaults)
+
+```bash
+python3 plot_eeg_rem.py --pid Soso --plot-mode both
+```
+
+If your EEG CSV has a custom filename:
+
+```bash
+python3 plot_eeg_rem.py --pid Soso --eeg-csv "/Users/solenenoize/Desktop/LuciDreams/plot/EEG_Soso.csv" --plot-mode both
+```
+
+### 6) Avoid overwriting previous plots
+
+Use `--output` with a unique filename:
+
+```bash
+python3 plot_motion_rem.py --pid Soso --plot-mode both --output "motion_Soso_run1.png"
+python3 plot_eeg_rem.py --pid Soso --plot-mode both --output "eeg_Soso_run1.png"
+```
+
+With `--plot-mode both`, scripts create two files (`_overview` and `_per_rem` suffixes).

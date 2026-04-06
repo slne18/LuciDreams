@@ -20,9 +20,10 @@ import matplotlib.pyplot as plt
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_CUTOFF_CSV = os.path.join(BASE_DIR, "motion_per_second_series.csv")
-DEFAULT_REM_CSV = os.path.join(BASE_DIR, "rem_episodes.csv")
-DEFAULT_CUE_CSV = os.path.join(BASE_DIR, "cue_events.csv")
+DATA_NIGHT_DIR = os.path.join(BASE_DIR, "data_night")
+DEFAULT_CUTOFF_CSV = os.path.join(DATA_NIGHT_DIR, "motion_smoothed_series.csv")
+DEFAULT_REM_CSV = os.path.join(DATA_NIGHT_DIR, "rem_episodes.csv")
+DEFAULT_CUE_CSV = os.path.join(DATA_NIGHT_DIR, "cue_events.csv")
 MOTION_PLOTS_DIR = os.path.join(BASE_DIR, "motion_plots")
 FOUR_HOURS_SECONDS = 4 * 60 * 60
 
@@ -41,28 +42,42 @@ def parse_hms(value: str) -> Optional[datetime]:
         return None
 
 
-def choose_session(cutoff_rows: List[Dict[str, str]], pid: Optional[str], session_start_boston: Optional[str]) -> Tuple[str, str]:
+def choose_session(
+    cutoff_rows: List[Dict[str, str]],
+    pid: Optional[str],
+    session_start_boston: Optional[str],
+    night_number: Optional[int],
+) -> Tuple[str, str, Optional[int]]:
     sessions = {}
     for row in cutoff_rows:
         row_pid = row.get("pid", "")
         row_start = row.get("session_start_boston", "")
+        row_night = as_int(row.get("night_number", ""))
         if row_pid and row_start:
-            sessions[(row_pid, row_start)] = sessions.get((row_pid, row_start), 0) + 1
+            sessions[(row_pid, row_start, row_night)] = sessions.get((row_pid, row_start, row_night), 0) + 1
 
     if not sessions:
         raise ValueError("No sessions found in cutoff CSV.")
 
     if pid and session_start_boston:
-        key = (pid, session_start_boston)
+        key = (pid, session_start_boston, night_number)
         if key not in sessions:
-            raise ValueError(f"Session not found for pid={pid}, session_start_boston={session_start_boston}")
+            raise ValueError(f"Session not found for pid={pid}, session_start_boston={session_start_boston}, night_number={night_number}")
         return key
+
+    if pid and night_number is not None:
+        pid_sessions = [(k, n) for k, n in sessions.items() if k[0] == pid and k[2] == night_number]
+        if not pid_sessions:
+            raise ValueError(f"No sessions found for pid={pid}, night_number={night_number}")
+        pid_sessions.sort(key=lambda x: x[1], reverse=True)
+        return pid_sessions[0][0]
 
     if pid:
         pid_sessions = [(k, n) for k, n in sessions.items() if k[0] == pid]
         if not pid_sessions:
             raise ValueError(f"No sessions found for pid={pid}")
-        pid_sessions.sort(key=lambda x: x[1], reverse=True)
+        # Prefer latest night when available, then densest row count.
+        pid_sessions.sort(key=lambda x: (x[0][2] if x[0][2] is not None else -1, x[1]), reverse=True)
         return pid_sessions[0][0]
 
     all_sessions = sorted(sessions.items(), key=lambda x: x[1], reverse=True)
@@ -85,10 +100,11 @@ def as_float(value: str) -> Optional[float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot each REM episode with cue details on a time axis.")
-    parser.add_argument("--cutoff-csv", default=DEFAULT_CUTOFF_CSV)
+    parser.add_argument("--cutoff-csv", default=DEFAULT_CUTOFF_CSV, help="Motion CSV (default: motion_smoothed_series.csv)")
     parser.add_argument("--rem-csv", default=DEFAULT_REM_CSV)
     parser.add_argument("--cue-csv", default=DEFAULT_CUE_CSV)
     parser.add_argument("--pid", default=None)
+    parser.add_argument("--night-number", type=int, default=None, help="Night number from export_data (1-based within pid)")
     parser.add_argument("--session-start-boston", default=None, help="HH:MM:SS")
     parser.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both")
     parser.add_argument("--both-phases-only", action="store_true", help="Only keep REM episodes that have both disruptive and induction cues")
@@ -101,17 +117,22 @@ def main() -> None:
     rem_rows = read_csv(args.rem_csv)
     cue_rows = read_csv(args.cue_csv)
 
-    sel_pid, sel_start = choose_session(cutoff_rows, args.pid, args.session_start_boston)
+    sel_pid, sel_start, sel_night = choose_session(cutoff_rows, args.pid, args.session_start_boston, args.night_number)
     os.makedirs(MOTION_PLOTS_DIR, exist_ok=True)
 
-    # Build per-second data maps for selected session.
+    # Build per-second data maps for selected session (prefer smoothed motion).
     sec_to_val: Dict[int, float] = {}
     sec_to_time: Dict[int, datetime] = {}
     for row in cutoff_rows:
         if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
             continue
+        row_night = as_int(row.get("night_number", ""))
+        if sel_night is not None and row_night != sel_night:
+            continue
         sec = as_int(row.get("second_index", ""))
-        raw_val = row.get("motion_per_second")
+        raw_val = row.get("motion_smoothed")
+        if raw_val is None:
+            raw_val = row.get("motion_per_second")
         if raw_val is None:
             raw_val = row.get("motion_80pct_cutoff", "")
         val = as_float(raw_val)
@@ -122,12 +143,15 @@ def main() -> None:
         sec_to_time[sec] = t
 
     if not sec_to_val:
-        raise ValueError("No motion-per-second data found for selected session.")
+        raise ValueError("No motion data found for selected session.")
 
     # Parse REM episodes for selected session.
     rem_eps = []
     for row in rem_rows:
         if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
+            continue
+        row_night = as_int(row.get("night_number", ""))
+        if sel_night is not None and row_night != sel_night:
             continue
         ep_idx = as_int(row.get("episode_index", ""))
         start_sec = as_int(row.get("episode_start_epoch_sec", ""))
@@ -150,6 +174,9 @@ def main() -> None:
     cues_by_episode = defaultdict(list)
     for row in cue_rows:
         if row.get("pid") != sel_pid:
+            continue
+        row_night = as_int(row.get("night_number", ""))
+        if sel_night is not None and row_night != sel_night:
             continue
         if str(row.get("took_place", "")).strip().lower() != "true":
             continue
@@ -182,7 +209,10 @@ def main() -> None:
     if args.plot_mode in ("overview", "both"):
         overview_out = args.output
         if args.plot_mode == "both" or not overview_out:
-            overview_out = os.path.join(MOTION_PLOTS_DIR, f"motion_overview_{sel_pid}.png")
+            if sel_night is not None:
+                overview_out = os.path.join(MOTION_PLOTS_DIR, f"motion_overview_{sel_pid}_night{sel_night}.png")
+            else:
+                overview_out = os.path.join(MOTION_PLOTS_DIR, f"motion_overview_{sel_pid}.png")
         overview_dir = os.path.dirname(overview_out)
         if overview_dir:
             os.makedirs(overview_dir, exist_ok=True)
@@ -199,7 +229,7 @@ def main() -> None:
         if not x_all:
             raise ValueError("No overview points left after trimming the last 30 values.")
         fig_o, ax_o = plt.subplots(figsize=(14, 6))
-        ax_o.plot(x_all, y_all, linewidth=1.2, color="tab:blue", label="motion per second")
+        ax_o.plot(x_all, y_all, linewidth=1.2, color="tab:blue", label="motion smoothed")
         first = True
         for ep in rem_eps:
             st = sec_to_time.get(ep["start_sec"])
@@ -238,9 +268,9 @@ def main() -> None:
         y_upper = max(y_hi, y_max)
         pad = max(0.5, 0.1 * (y_upper - y_lo if y_upper > y_lo else 1.0))
         ax_o.set_ylim(max(0.0, y_lo - pad), y_upper + pad)
-        ax_o.set_title(f"Motion overview with REM windows | pid={sel_pid} | session_start={sel_start}")
+        ax_o.set_title(f"Motion overview with REM windows | pid={sel_pid} | night={sel_night} | session_start={sel_start}")
         ax_o.set_xlabel("Time (Boston)")
-        ax_o.set_ylabel("motion_per_second")
+        ax_o.set_ylabel("motion_smoothed")
         ax_o.grid(True, alpha=0.25)
         ax_o.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
         ax_o.tick_params(axis="x", labelrotation=30, labelsize=8)
@@ -252,7 +282,10 @@ def main() -> None:
     if args.plot_mode in ("per-rem", "both"):
         per_rem_out = args.output
         if args.plot_mode == "both" or not per_rem_out:
-            per_rem_out = os.path.join(MOTION_PLOTS_DIR, f"motion_per_rem_{sel_pid}.png")
+            if sel_night is not None:
+                per_rem_out = os.path.join(MOTION_PLOTS_DIR, f"motion_per_rem_{sel_pid}_night{sel_night}.png")
+            else:
+                per_rem_out = os.path.join(MOTION_PLOTS_DIR, f"motion_per_rem_{sel_pid}.png")
         per_rem_dir = os.path.dirname(per_rem_out)
         if per_rem_dir:
             os.makedirs(per_rem_dir, exist_ok=True)
@@ -279,7 +312,7 @@ def main() -> None:
                 xs.append(sec_to_time[sec])
                 ys.append(round(sec_to_val[sec], 3))
             if not xs:
-                ax.text(0.5, 0.5, "No per-second values", transform=ax.transAxes, ha="center", va="center")
+                ax.text(0.5, 0.5, "No motion values", transform=ax.transAxes, ha="center", va="center")
                 ax.axis("off")
                 continue
             ax.plot(xs, ys, color="tab:blue", linewidth=1.2, marker="o", markersize=2)
@@ -315,7 +348,7 @@ def main() -> None:
                 ax.scatter([ct], [round(cv, 3)], color=ccol, s=24, zorder=5)
             ax.set_title(f"REM #{ep_idx} | {ep['start_clock']} -> {ep['end_clock']} | dur={ep['dur_sec']}s", fontsize=9)
             ax.set_xlabel("Time (Boston)")
-            ax.set_ylabel("motion_per_second")
+            ax.set_ylabel("motion_smoothed")
             ax.grid(True, alpha=0.25)
             win_dur = max(1, win_end_sec - win_start_sec)
             if win_dur <= 120:
@@ -329,14 +362,14 @@ def main() -> None:
             ax.legend(loc="upper right", fontsize=7)
         for j in range(len(rem_eps), len(axes)):
             axes[j].axis("off")
-        fig.suptitle(f"REM episode timelines (motion per second) | pid={sel_pid} | session_start={sel_start}", fontsize=11)
+        fig.suptitle(f"REM episode timelines (smoothed motion) | pid={sel_pid} | night={sel_night} | session_start={sel_start}", fontsize=11)
         fig.tight_layout(rect=[0, 0, 1, 0.96])
         fig.savefig(per_rem_out, dpi=160)
         outputs.append(("per-rem", per_rem_out))
 
     for mode, out in outputs:
         print(f"Saved {mode} plot to {out}")
-    print(f"Selected session: pid={sel_pid}, session_start_boston={sel_start}")
+    print(f"Selected session: pid={sel_pid}, night_number={sel_night}, session_start_boston={sel_start}")
     print(f"REM episodes plotted: {len(rem_eps)}")
 
 

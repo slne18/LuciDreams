@@ -20,8 +20,9 @@ import pandas as pd
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_REM_CSV = os.path.join(BASE_DIR, "rem_episodes.csv")
-DEFAULT_CUE_CSV = os.path.join(BASE_DIR, "cue_events.csv")
+DATA_NIGHT_DIR = os.path.join(BASE_DIR, "data_night")
+DEFAULT_REM_CSV = os.path.join(DATA_NIGHT_DIR, "rem_episodes.csv")
+DEFAULT_CUE_CSV = os.path.join(DATA_NIGHT_DIR, "cue_events.csv")
 EEG_DATA_DIR = os.path.join(BASE_DIR, "EEG")
 EEG_PLOTS_DIR = os.path.join(BASE_DIR, "eeg_plots")
 DEFAULT_OUTPUT_TEMPLATE = os.path.join(EEG_PLOTS_DIR, "eeg_rem_phases_{pid}.png")
@@ -142,15 +143,34 @@ def lowpass_filter(series: pd.Series, fs_hz: float, cutoff_hz: float) -> pd.Seri
     return pd.Series(filt, index=series.index)
 
 
-def choose_rem_session(rem_df: pd.DataFrame, pid: str, session_start_boston: Optional[str]) -> pd.DataFrame:
+def choose_rem_session(
+    rem_df: pd.DataFrame,
+    pid: str,
+    session_start_boston: Optional[str],
+    night_number: Optional[int],
+) -> pd.DataFrame:
     d = rem_df[rem_df["pid"].astype(str) == pid].copy()
     if d.empty:
         raise ValueError(f"No REM rows found for pid={pid}")
+    has_night_col = "night_number" in d.columns
+    if has_night_col:
+        d["night_number"] = pd.to_numeric(d["night_number"], errors="coerce")
+    if night_number is not None and has_night_col:
+        d = d[d["night_number"] == int(night_number)].copy()
+        if d.empty:
+            raise ValueError(f"No REM rows found for pid={pid}, night_number={night_number}")
     if session_start_boston:
         d = d[d["session_start_boston"].astype(str) == session_start_boston].copy()
         if d.empty:
-            raise ValueError(f"No REM rows found for pid={pid}, session_start_boston={session_start_boston}")
+            raise ValueError(
+                f"No REM rows found for pid={pid}, night_number={night_number}, session_start_boston={session_start_boston}"
+            )
         return d
+    if has_night_col:
+        grp_n = d.groupby("night_number").size().sort_index()
+        if len(grp_n) > 0:
+            sel_night = int(grp_n.index.max())
+            d = d[d["night_number"] == sel_night].copy()
     # default: choose session with most REM rows
     grp = d.groupby("session_start_boston").size().sort_values(ascending=False)
     sel = str(grp.index[0])
@@ -160,7 +180,9 @@ def choose_rem_session(rem_df: pd.DataFrame, pid: str, session_start_boston: Opt
 def main() -> None:
     p = argparse.ArgumentParser(description="Plot RAW_AF7/RAW_AF8 for each REM phase with cue markers.")
     p.add_argument("--pid", required=True, help="Participant ID (e.g. Sole)")
-    p.add_argument("--eeg-csv", default=None, help="Path to EEG csv. Default: plot/EEG_<pid>.csv")
+    p.add_argument("--night-number", type=int, default=None, help="Night number from export_data (1-based within pid)")
+    p.add_argument("--eeg-csv", default=None, help="Path to EEG csv. If omitted, tries EEG_<eeg-pid><night>.csv then fallbacks")
+    p.add_argument("--eeg-pid", default=None, help="Optional EEG file PID stem if it differs from --pid")
     p.add_argument("--rem-csv", default=DEFAULT_REM_CSV)
     p.add_argument("--cue-csv", default=DEFAULT_CUE_CSV)
     p.add_argument("--session-start-boston", default=None, help="Optional session_start_boston (HH:MM:SS)")
@@ -177,7 +199,8 @@ def main() -> None:
     p.add_argument("--per-rem-post-sec", type=int, default=60, help="Seconds shown after REM end in per-rem mode")
     p.add_argument("--output", default=None)
     args = p.parse_args()
-    output_png = args.output or DEFAULT_OUTPUT_TEMPLATE.format(pid=args.pid)
+    night_suffix = f"_night{args.night_number}" if args.night_number is not None else ""
+    output_png = args.output or DEFAULT_OUTPUT_TEMPLATE.format(pid=f"{args.pid}{night_suffix}")
     if args.plot_mode == "both":
         if args.output:
             root, ext = os.path.splitext(args.output)
@@ -186,8 +209,8 @@ def main() -> None:
             overview_output_png = f"{root}_overview{ext}"
             per_rem_output_png = f"{root}_per_rem{ext}"
         else:
-            overview_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_overview_{args.pid}.png")
-            per_rem_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_per_rem_{args.pid}.png")
+            overview_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_overview_{args.pid}{night_suffix}.png")
+            per_rem_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_per_rem_{args.pid}{night_suffix}.png")
     elif args.plot_mode == "overview":
         overview_output_png = output_png
         per_rem_output_png = None
@@ -200,18 +223,32 @@ def main() -> None:
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
 
-    eeg_csv = args.eeg_csv or os.path.join(EEG_DATA_DIR, f"EEG_{args.pid}.csv")
-    if not os.path.exists(eeg_csv):
-        legacy_path = os.path.join(BASE_DIR, f"EEG_{args.pid}.csv")
-        if os.path.exists(legacy_path):
-            eeg_csv = legacy_path
-    if not os.path.exists(eeg_csv):
-        raise FileNotFoundError(f"EEG file not found: {eeg_csv}")
+    if args.eeg_csv:
+        eeg_csv = args.eeg_csv
+    else:
+        eeg_pid = args.eeg_pid or args.pid
+        candidates = []
+        if args.night_number is not None:
+            candidates.extend([
+                os.path.join(EEG_DATA_DIR, f"EEG_{eeg_pid}{args.night_number}.csv"),
+                os.path.join(BASE_DIR, f"EEG_{eeg_pid}{args.night_number}.csv"),
+            ])
+        candidates.extend([
+            os.path.join(EEG_DATA_DIR, f"EEG_{eeg_pid}.csv"),
+            os.path.join(BASE_DIR, f"EEG_{eeg_pid}.csv"),
+        ])
+        eeg_csv = None
+        for c in candidates:
+            if os.path.exists(c):
+                eeg_csv = c
+                break
+        if eeg_csv is None:
+            raise FileNotFoundError(f"EEG file not found. Tried: {candidates}")
 
     rem_df = pd.read_csv(args.rem_csv)
     cue_df = pd.read_csv(args.cue_csv)
 
-    rem_df = choose_rem_session(rem_df, args.pid, args.session_start_boston)
+    rem_df = choose_rem_session(rem_df, args.pid, args.session_start_boston, args.night_number)
     rem_df["episode_index"] = pd.to_numeric(rem_df["episode_index"], errors="coerce")
     rem_df["episode_duration_sec"] = pd.to_numeric(rem_df["episode_duration_sec"], errors="coerce")
     rem_df = rem_df.dropna(subset=["episode_index"]).copy()
@@ -219,6 +256,9 @@ def main() -> None:
     rem_df = rem_df.sort_values("episode_index").reset_index(drop=True)
 
     cue_df = cue_df[cue_df["pid"].astype(str) == args.pid].copy()
+    if args.night_number is not None and "night_number" in cue_df.columns:
+        cue_df["night_number"] = pd.to_numeric(cue_df["night_number"], errors="coerce")
+        cue_df = cue_df[cue_df["night_number"] == int(args.night_number)].copy()
     if "took_place" in cue_df.columns:
         cue_df = cue_df[cue_df["took_place"].astype(str).str.lower() == "true"].copy()
     cue_df["episode_index"] = pd.to_numeric(cue_df["episode_index"], errors="coerce")
@@ -364,7 +404,9 @@ def main() -> None:
         ax.set_xticklabels([format_elapsed_hms(t)[:5] for t in ticks], rotation=0)
 
         filt_tag = f"bandpass {args.bandpass_low_hz:g}-{args.bandpass_high_hz:g}Hz + notch {args.notch_hz:g}Hz" if filter_applied else "no extra filter"
-        ax.set_title(f"EEG session overview with REM windows | pid={args.pid} | start={session_start_hms} | {filt_tag}")
+        ax.set_title(
+            f"EEG session overview with REM windows | pid={args.pid} | night={args.night_number} | start={session_start_hms} | {filt_tag}"
+        )
         ax.set_xlabel("Elapsed from session start (HH:MM)")
         ax.set_ylabel("Normalized EEG (robust z)")
         ax.grid(True, alpha=0.25)
@@ -474,7 +516,10 @@ def main() -> None:
             ax.legend(loc="upper right", fontsize=7)
         for j in range(len(rem_plot_df), len(axes)):
             axes[j].axis("off")
-        fig.suptitle(f"EEG per REM phase | pid={args.pid} | session_start={session_start_hms} | plotted={plotted_count}/{len(rem_plot_df)}", fontsize=11)
+        fig.suptitle(
+            f"EEG per REM phase | pid={args.pid} | night={args.night_number} | session_start={session_start_hms} | plotted={plotted_count}/{len(rem_plot_df)}",
+            fontsize=11,
+        )
         fig.tight_layout(rect=[0, 0, 1, 0.97])
         fig.savefig(per_rem_output_png, dpi=120)
         print(f"Saved plot to {per_rem_output_png}")
