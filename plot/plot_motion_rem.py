@@ -26,6 +26,9 @@ DEFAULT_REM_CSV = os.path.join(DATA_NIGHT_DIR, "rem_episodes.csv")
 DEFAULT_CUE_CSV = os.path.join(DATA_NIGHT_DIR, "cue_events.csv")
 MOTION_PLOTS_DIR = os.path.join(BASE_DIR, "motion_plots")
 FOUR_HOURS_SECONDS = 4 * 60 * 60
+# For exported smoothed series indexed from first valid smoothed sample (window 180s),
+# absolute_second = csv_second_index + 179.
+DEFAULT_SMOOTH_INDEX_OFFSET_SEC = 179
 
 
 def read_csv(path: str) -> List[Dict[str, str]]:
@@ -105,6 +108,12 @@ def main() -> None:
     parser.add_argument("--cue-csv", default=DEFAULT_CUE_CSV)
     parser.add_argument("--pid", default=None)
     parser.add_argument("--night-number", type=int, default=None, help="Night number from export_data (1-based within pid)")
+    parser.add_argument(
+        "--smooth-index-offset-sec",
+        type=int,
+        default=DEFAULT_SMOOTH_INDEX_OFFSET_SEC,
+        help="Offset applied to second_index when plotting smoothed CSV (default: 179 for 180s window export). Use 0 if already absolute.",
+    )
     parser.add_argument("--session-start-boston", default=None, help="HH:MM:SS")
     parser.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both")
     parser.add_argument("--both-phases-only", action="store_true", help="Only keep REM episodes that have both disruptive and induction cues")
@@ -123,6 +132,12 @@ def main() -> None:
     # Build per-second data maps for selected session (prefer smoothed motion).
     sec_to_val: Dict[int, float] = {}
     sec_to_time: Dict[int, datetime] = {}
+    has_smoothed_col = False
+    for r in cutoff_rows:
+        if "motion_smoothed" in r and str(r.get("motion_smoothed", "")).strip() != "":
+            has_smoothed_col = True
+            break
+    sec_offset = int(args.smooth_index_offset_sec) if has_smoothed_col else 0
     for row in cutoff_rows:
         if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
             continue
@@ -139,6 +154,7 @@ def main() -> None:
         t = parse_hms(row.get("time_boston", ""))
         if sec is None or val is None or t is None:
             continue
+        sec = sec + sec_offset
         sec_to_val[sec] = val
         sec_to_time[sec] = t
 
@@ -370,6 +386,8 @@ def main() -> None:
     for mode, out in outputs:
         print(f"Saved {mode} plot to {out}")
     print(f"Selected session: pid={sel_pid}, night_number={sel_night}, session_start_boston={sel_start}")
+    if has_smoothed_col:
+        print(f"Applied smoothed second_index offset: +{sec_offset}s")
     print(f"REM episodes plotted: {len(rem_eps)}")
 
 

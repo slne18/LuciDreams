@@ -20,6 +20,7 @@ OUT_CUES_CSV = os.path.join(OUT_DIR, "cue_events.csv")
 OUT_CUTOFF_CSV = os.path.join(OUT_DIR, "motion_per_second_series.csv")
 OUT_SMOOTHED_CSV = os.path.join(OUT_DIR, "motion_smoothed_series.csv")
 OUT_SESSIONS_CSV = os.path.join(OUT_DIR, "sessions_overview.csv")
+OUT_TRAINS_CSV = os.path.join(OUT_DIR, "train_events.csv")
 BOSTON_TZ = ZoneInfo("America/New_York")
 
 
@@ -166,6 +167,7 @@ def main():
     motion_rows = []
     smoothed_rows = []
     session_rows = []
+    train_rows = []
 
     participant_ids = set()
     session_count = 0
@@ -329,6 +331,25 @@ def main():
                 cues = induction.get("cues", []) or []
                 total_induction_cues += len(cues)
 
+                # Train timeline export for runtime-faithful replay in notebooks.
+                disruptive_start = disruptive.get("start_epoch_sec")
+                first_induction_epoch = None
+                if cues:
+                    first_induction_epoch = cues[0].get("epoch_sec")
+                train_end_epoch = tr.get("end_epoch_sec")
+                train_rows.append({
+                    "pid": pid,
+                    "night_number": night_number,
+                    "episode_index": ep_idx,
+                    "train_index": tr_idx,
+                    "disruptive_took_place": disruptive.get("took_place"),
+                    "disruptive_start_epoch_sec": disruptive_start,
+                    "first_induction_epoch_sec": first_induction_epoch,
+                    "train_end_epoch_sec": train_end_epoch,
+                    "train_duration_sec": tr.get("duration_sec"),
+                    "induction_cues_count": len(cues),
+                })
+
                 # disruptive cue/event (has absolute time in your schema)
                 cue_rows.append({
                     "pid": pid,
@@ -458,6 +479,24 @@ def main():
         writer.writeheader()
         writer.writerows(session_rows)
 
+    # Write train timeline rows
+    with open(OUT_TRAINS_CSV, "w", newline="", encoding="utf-8") as f:
+        fields = [
+            "pid",
+            "night_number",
+            "episode_index",
+            "train_index",
+            "disruptive_took_place",
+            "disruptive_start_epoch_sec",
+            "first_induction_epoch_sec",
+            "train_end_epoch_sec",
+            "train_duration_sec",
+            "induction_cues_count",
+        ]
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(train_rows)
+
     print(f"Scanned participants: {len(participant_ids)}")
     print(f"Scanned sessions: {session_count}")
     print(f"Wrote {OUT_REM_CSV} ({len(rem_rows)} rows)")
@@ -465,6 +504,7 @@ def main():
     print(f"Wrote {OUT_CUTOFF_CSV} ({len(motion_rows)} rows)")
     print(f"Wrote {OUT_SMOOTHED_CSV} ({len(smoothed_rows)} rows)")
     print(f"Wrote {OUT_SESSIONS_CSV} ({len(session_rows)} rows)")
+    print(f"Wrote {OUT_TRAINS_CSV} ({len(train_rows)} rows)")
 
 
 if __name__ == "__main__":
