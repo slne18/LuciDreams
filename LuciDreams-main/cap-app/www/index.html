@@ -2085,13 +2085,6 @@ function playFixedBeep75(durationMs, onEnded) {
     req.onsuccess = function() { idbDb = req.result; cb(idbDb); };
     req.onerror = function() { cb(null); };
   }
-  // Returns true when a timestamp is past retention period.
-  function isExpiredByRetention(tsMs) {
-    if (tsMs == null) return false;
-    var n = Number(tsMs);
-    if (!isFinite(n) || n <= 0) return false;
-    return Date.now() > n;
-  }
   // Deletes voice blob for a participant id.
   function deleteVoiceBlob(pid, cb) {
     openIdb(function(db) {
@@ -2119,10 +2112,6 @@ function playFixedBeep75(durationMs, onEnded) {
       r.onsuccess = function() {
         var rec = r.result || null;
         if (!rec || !rec.blob) { cb(null); return; }
-        if (isExpiredByRetention(rec.expires_at_ms)) {
-          deleteVoiceBlob(pid, function() { cb(null); });
-          return;
-        }
         cb(rec.blob);
       };
       r.onerror = function() { cb(null); };
@@ -2138,8 +2127,7 @@ function playFixedBeep75(durationMs, onEnded) {
       store.put({
         pid: pid,
         blob: blob,
-        saved_at_ms: now,
-        expires_at_ms: now + DATA_RETENTION_MS
+        saved_at_ms: now
       });
       tx.oncomplete = function() {
         state.voiceVariantCachePid = null;
