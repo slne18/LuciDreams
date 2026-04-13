@@ -12,7 +12,7 @@ LuciDreams is a web app for lucid-dream and sleep studies. It monitors device mo
 ## Core Flow
 
 1. Participant enters a participant ID (PID).
-2. App loads participant configuration from Firebase Firestore.
+2. App initializes the session from in-app defaults and PID context.
 3. Participant grants motion permission and calibrates audio volume.
 4. During sleep, app tracks motion and identifies REM-like periods.
 5. App plays one configured cue at the end of a qualified low-motion window.
@@ -22,7 +22,7 @@ LuciDreams is a web app for lucid-dream and sleep studies. It monitors device mo
 
 - Frontend: single-page web app (`luci.html`)
 - Backend: Flask (serves pages and static files)
-- Data: Firebase Firestore (participant config + session outputs)
+- Data: Firebase Firestore (session outputs)
 - Deployment target: Google App Engine
 
 ## Local Development
@@ -41,7 +41,7 @@ Then open the app route served by Flask (commonly `/luci`).
 
 1. Create a Firebase project and Web app in Firebase Console.
 2. Add the Firebase web config to `LuciDreams-main/static/firebase-config.js` as `window.FIREBASE_CONFIG`.
-3. Create/update Firestore collections used by this app (for participant config and sessions).
+3. Create/update Firestore collections used by this app (session uploads under `sleep_studies/{pid}/sessions`).
 4. Set Firestore rules appropriate for your study security model.
 
 ## Deployment

@@ -26,9 +26,9 @@ DEFAULT_REM_CSV = os.path.join(DATA_NIGHT_DIR, "rem_episodes.csv")
 DEFAULT_CUE_CSV = os.path.join(DATA_NIGHT_DIR, "cue_events.csv")
 MOTION_PLOTS_DIR = os.path.join(BASE_DIR, "motion_plots")
 FOUR_HOURS_SECONDS = 4 * 60 * 60
-# For exported smoothed series indexed from first valid smoothed sample (window 180s),
-# absolute_second = csv_second_index + 179.
-DEFAULT_SMOOTH_INDEX_OFFSET_SEC = 179
+# For exported smoothed series indexed from first valid smoothed sample (window 300s),
+# absolute_second = csv_second_index + 299.
+DEFAULT_SMOOTH_INDEX_OFFSET_SEC = 299
 
 
 def read_csv(path: str) -> List[Dict[str, str]]:
@@ -112,7 +112,7 @@ def main() -> None:
         "--smooth-index-offset-sec",
         type=int,
         default=DEFAULT_SMOOTH_INDEX_OFFSET_SEC,
-        help="Offset applied to second_index when plotting smoothed CSV (default: 179 for 180s window export). Use 0 if already absolute.",
+        help="Offset applied to second_index when plotting smoothed CSV (default: 299 for 300s window export). Use 0 if already absolute.",
     )
     parser.add_argument("--session-start-boston", default=None, help="HH:MM:SS")
     parser.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both")
@@ -160,6 +160,7 @@ def main() -> None:
 
     if not sec_to_val:
         raise ValueError("No motion data found for selected session.")
+    first_valid_sec = min(sec_to_val.keys())
 
     # Parse REM episodes for selected session.
     rem_eps = []
@@ -233,10 +234,11 @@ def main() -> None:
         if overview_dir:
             os.makedirs(overview_dir, exist_ok=True)
         sorted_secs = sorted(sec_to_val.keys())
-        x_all = [sec_to_time[s] for s in sorted_secs if s in sec_to_time and s >= FOUR_HOURS_SECONDS]
-        y_all = [round(sec_to_val[s], 3) for s in sorted_secs if s in sec_to_time and s >= FOUR_HOURS_SECONDS]
+        overview_start_sec = max(FOUR_HOURS_SECONDS, first_valid_sec)
+        x_all = [sec_to_time[s] for s in sorted_secs if s in sec_to_time and s >= overview_start_sec]
+        y_all = [round(sec_to_val[s], 3) for s in sorted_secs if s in sec_to_time and s >= overview_start_sec]
         if not x_all:
-            raise ValueError("No motion points from 4h onward for overview plot.")
+            raise ValueError("No motion points from first valid sample onward after 4h gate for overview plot.")
         # Drop last 30 seconds (awakening period not relevant for overnight trend).
         trim_n = min(30, len(y_all))
         if trim_n > 0:
@@ -316,7 +318,7 @@ def main() -> None:
             ep_idx = ep["episode_index"]
             start_sec = ep["start_sec"]
             end_sec = start_sec + ep["dur_sec"]
-            win_start_sec = max(0, start_sec - max(0, args.per_rem_pre_sec))
+            win_start_sec = max(first_valid_sec, start_sec - max(0, args.per_rem_pre_sec))
             win_end_sec = end_sec + max(0, args.per_rem_post_sec)
             xs = []
             ys = []

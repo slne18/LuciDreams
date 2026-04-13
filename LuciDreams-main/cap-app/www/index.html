@@ -708,9 +708,8 @@
   const BUFFER_SIZE = 800;
   const SIG_MOTION = 0.1;
   const REM_GATE_SECONDS = 14400;   // 4 hours before REM detection runs
-  const REM_SMOOTH_WINDOW_SEC = 180; // Rolling mean over last 180 seconds (updated every second)
+  const REM_SMOOTH_WINDOW_SEC = 300; // Rolling mean over last 300 seconds (updated every second)
   const REM_STILLNESS_PERCENT_OF_SERIES_MEAN = 0.8; // Stillness percentile against the evolving current smoothed-motion series
-  const REM_EXIT_HOLD_SEC = 10; // Exit REM only after 10s continuous non-still
   const REM_ENTRY_HOLD_SEC = 120; // Keep REM stable for 2 min before first train
   // REM Episode Manager
   const NIGHT_MAX_TRAINS = 10;
@@ -807,7 +806,6 @@
     baselineMotionSum: 0,
     secondsRecorded: 0,
     consecutiveRemSeconds: 0,
-    consecutiveNonStillSeconds: 0,
     remEntryStableStartEpoch: null,
     inRemEpisode: false,
     remEpisodeStartSeconds: 0,
@@ -2261,7 +2259,6 @@ function playFixedBeep75(durationMs, onEnded) {
         state.inRemEpisode = false;
         state.fakeRemTestActive = false;
         state.consecutiveRemSeconds = 0;
-        state.consecutiveNonStillSeconds = 0;
         state.remEntryStableStartEpoch = null;
         state.currentRemEpisodeEntryThreshold = null;
         state.trainPhase = null;
@@ -2345,7 +2342,6 @@ function playFixedBeep75(durationMs, onEnded) {
           state.remEpisodeStartTime = new Date().toISOString();
           state.currentRemEpisodeEntryThreshold = movementNoiseFloor;
           state.inRemEpisode = true;
-          state.consecutiveNonStillSeconds = 0;
           state.remEntryStableStartEpoch = state.secondsRecorded;
           state.currentEpisodeTrains = [];
           state.nextTrainInductionCap = null;
@@ -2354,17 +2350,10 @@ function playFixedBeep75(durationMs, onEnded) {
         }
       } else {
         if (!isStillSmoothed) {
-          if (state.trainPhase === 'disruptive') {
-            // Ignore micro-arousals caused by disruptive cues.
-            state.consecutiveNonStillSeconds = 0;
-          } else {
-            state.consecutiveNonStillSeconds++;
-          }
-          if (state.consecutiveNonStillSeconds >= REM_EXIT_HOLD_SEC) {
+          if (state.trainPhase !== 'disruptive') {
             finalizeCurrentRemEpisode();
           }
         } else {
-          state.consecutiveNonStillSeconds = 0;
           var isFirstTrainPending = (state.currentEpisodeTrains || []).length === 0;
           var remStableForSec = state.remEntryStableStartEpoch == null ? 0 : (state.secondsRecorded - state.remEntryStableStartEpoch);
           if (isFirstTrainPending && state.trainPhase === null && !state.soundRunning && remStableForSec >= REM_ENTRY_HOLD_SEC) {
@@ -2396,7 +2385,6 @@ function playFixedBeep75(durationMs, onEnded) {
       state.consecutive_seconds_above_threshold = 0;
       state.inRemEpisode = false;
       state.consecutiveRemSeconds = 0;
-      state.consecutiveNonStillSeconds = 0;
       state.remEntryStableStartEpoch = null;
       state.currentRemEpisodeEntryThreshold = null;
       state.trainPhase = null;
@@ -3961,7 +3949,7 @@ function playFixedBeep75(durationMs, onEnded) {
         var needsMotionActivation = !getMotionGranted(state.pid);
         container.appendChild(el('p', { className: 'icon-lg' }, ['🔐']));
         container.appendChild(el('p', { className: 'text-title', style: { color: 'var(--orange-accent)', fontWeight: 'bold' } }, ['IMPORTANT: Your screen must stay ON.']));
-        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.\n3. Set volume to 50% (with the physical buttons or the Control Center slider).']));
+        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.\n3. Set the volume to 50% (with the physical buttons or the Control Center slider).']));
         container.appendChild(el('div', { className: 'divider' }));
         if (needsMotionActivation) {
           container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));

@@ -6,8 +6,8 @@ A web app for sleep studies that plays a sound (keyword or beep) during suspecte
 
 ## Goal of the project
 
-- **Participant flow:** Enter PID → load settings → grant motion permission → calibrate sound volume → start sleep → app tracks motion and plays the stimulus during low-motion (REM-like) windows → participant taps “I’m awake” and data is uploaded.
-- **Research use:** Per-participant config (keyword vs beep, volume, control vs experimental), and session data (motion aggregates, REM episodes, sound log with optional `playback_completed`) for analysis.
+- **Participant flow:** Enter PID → grant motion permission → calibrate sound volume → start sleep → app tracks motion and plays the stimulus during low-motion (REM-like) windows → participant taps “I’m awake” and data is uploaded.
+- **Research use:** Session data (motion aggregates, REM episodes, sound log with optional `playback_completed`) is uploaded for analysis.
 
 ---
 
@@ -28,35 +28,6 @@ A web app for sleep studies that plays a sound (keyword or beep) during suspecte
 - Paste it into **`static/firebase-config.js`** as `window.FIREBASE_CONFIG` (replace the placeholder).
 
 ### 2. Firestore structure
-
-**Participant config (one document per participant)**
-
-- **Collection:** `participant_configs`
-- **Document ID:** participant ID (e.g. `P001`, `Testing`)
-
-**Document fields:**
-
-| Field              | Type    | Description |
-|--------------------|---------|-------------|
-| `keyword`          | string  | Word spoken when `sound_type` is `keyword` (e.g. `"Bip"`). |
-| `sound_type`       | string  | `"keyword"` (speech) or `"beep"` (native tone in LuciDreams app). |
-| `beep_frequency`   | number  | Beep frequency in Hz (e.g. `800`). |
-| `beep_duration_ms` | number  | Beep length in ms (e.g. `150`). |
-| `interval`         | number  | Reserved (e.g. `10`). |
-| `startVolume`      | number  | Initial calibration volume (e.g. `0.01`). |
-
-Example document for PID `Testing` in `participant_configs`:
-
-```json
-{
-  "keyword": "Bip",
-  "sound_type": "beep",
-  "beep_frequency": 800,
-  "beep_duration_ms": 150,
-  "interval": 10,
-  "startVolume": 0.01
-}
-```
 
 **Session data (one document per “I’m awake” upload)**
 
@@ -79,10 +50,7 @@ Top-level fields: **`participant_id`**, **`device_time`**, **`general`**, **`ind
 
 ### 3. Firestore rules
 
-Ensure your rules allow:
-
-- **Read** for `participant_configs/{pid}` (e.g. by PID or authenticated user, depending on your design).
-- **Write** for `sleep_studies/{pid}/sessions` (e.g. only for that PID or authenticated user).
+Ensure your rules allow write access for `sleep_studies/{pid}/sessions` (according to your auth model).
 
 Example (adjust for your auth model):
 
@@ -90,10 +58,6 @@ Example (adjust for your auth model):
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /participant_configs/{pid} {
-      allow read: if true;
-      allow write: if false;
-    }
     match /sleep_studies/{pid}/sessions/{sessionId} {
       allow read, write: if true;
     }
