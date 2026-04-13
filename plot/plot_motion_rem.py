@@ -117,8 +117,8 @@ def main() -> None:
     parser.add_argument("--session-start-boston", default=None, help="HH:MM:SS")
     parser.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both")
     parser.add_argument("--both-phases-only", action="store_true", help="Only keep REM episodes that have both disruptive and induction cues")
-    parser.add_argument("--per-rem-pre-sec", type=int, default=60, help="Seconds shown before REM start in per-rem mode")
-    parser.add_argument("--per-rem-post-sec", type=int, default=60, help="Seconds shown after REM end in per-rem mode")
+    parser.add_argument("--per-rem-pre-sec", type=int, default=180, help="Seconds shown before REM start in per-rem mode")
+    parser.add_argument("--per-rem-post-sec", type=int, default=180, help="Seconds shown after REM end in per-rem mode")
     parser.add_argument("--output", default=None)
     args = parser.parse_args()
 
@@ -263,14 +263,12 @@ def main() -> None:
                 if cs < FOUR_HOURS_SECONDS:
                     continue
                 ct = sec_to_time.get(cs)
-                cv = sec_to_val.get(cs)
-                if ct is None or cv is None:
+                if ct is None:
                     continue
                 ctype = c["cue_type"] if c["cue_type"] in cue_color else "induction"
                 label = f"{ctype} cue" if cue_first.get(ctype, False) else None
                 cue_first[ctype] = False
                 ax_o.axvline(ct, color=cue_color.get(ctype, "tab:purple"), linestyle=":", linewidth=1.0, alpha=0.8, label=label)
-                ax_o.scatter([ct], [round(cv, 3)], color=cue_color.get(ctype, "tab:purple"), s=12, zorder=4)
         # Zoom y-axis for readability while keeping full peak visibility.
         y_zoom_ref = sorted(y_all)
         lo_idx = max(0, int(0.01 * (len(y_zoom_ref) - 1)))
@@ -353,26 +351,18 @@ def main() -> None:
                 if cs < win_start_sec or cs > win_end_sec:
                     continue
                 ct = sec_to_time.get(cs)
-                cv = sec_to_val.get(cs)
-                if ct is None or cv is None:
+                if ct is None:
                     continue
                 ccol = cue_color.get(c["cue_type"], "tab:purple")
                 ctype = c["cue_type"] if c["cue_type"] in cue_color else "induction"
                 clabel = f"{ctype} cue" if cue_first.get(ctype, False) else None
                 cue_first[ctype] = False
                 ax.axvline(ct, color=ccol, linestyle=":", linewidth=1.0, alpha=0.9, label=clabel)
-                ax.scatter([ct], [round(cv, 3)], color=ccol, s=24, zorder=5)
             ax.set_title(f"REM #{ep_idx} | {ep['start_clock']} -> {ep['end_clock']} | dur={ep['dur_sec']}s", fontsize=9)
             ax.set_xlabel("Time (Boston)")
             ax.set_ylabel("motion_smoothed")
             ax.grid(True, alpha=0.25)
-            win_dur = max(1, win_end_sec - win_start_sec)
-            if win_dur <= 120:
-                ax.xaxis.set_major_locator(mdates.SecondLocator(interval=10))
-            elif win_dur <= 300:
-                ax.xaxis.set_major_locator(mdates.SecondLocator(interval=30))
-            else:
-                ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=1))
+            ax.xaxis.set_major_locator(mdates.SecondLocator(interval=30))
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
             ax.tick_params(axis="x", labelrotation=30, labelsize=8)
             ax.legend(loc="upper right", fontsize=7)
