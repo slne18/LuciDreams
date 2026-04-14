@@ -13,7 +13,7 @@ from firebase_admin import credentials, firestore
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SERVICE_ACCOUNT_PATH = os.path.join(os.path.dirname(BASE_DIR), "lucidreans-firebase-adminsdk-fbsvc-4b27ed98c4.json")
+DEFAULT_FIREBASE_PROJECT_ID = "luciddreaming-33e97"
 OUT_DIR = os.path.join(BASE_DIR, "data_night")
 OUT_REM_CSV = os.path.join(OUT_DIR, "rem_episodes.csv")
 OUT_CUES_CSV = os.path.join(OUT_DIR, "cue_events.csv")
@@ -159,6 +159,22 @@ def main():
     parser.add_argument("--local-file", default=None, help="Optional local JSON export file (e.g., output.csv).")
     parser.add_argument("--pid", default=None, help="Optional participant filter (e.g., Soso).")
     parser.add_argument("--night-number", type=int, default=None, help="Optional night number filter (1-based within pid).")
+    parser.add_argument(
+        "--service-account",
+        default=os.environ.get("FIREBASE_SERVICE_ACCOUNT_PATH"),
+        help="Path to Firebase service-account JSON (defaults to FIREBASE_SERVICE_ACCOUNT_PATH env var).",
+    )
+    parser.add_argument(
+        "--project-id",
+        default=os.environ.get("FIREBASE_PROJECT_ID", DEFAULT_FIREBASE_PROJECT_ID),
+        help=f"Firebase/GCP project ID (defaults to FIREBASE_PROJECT_ID env var, then {DEFAULT_FIREBASE_PROJECT_ID}).",
+    )
+    parser.add_argument(
+        "--use-adc",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use Application Default Credentials from gcloud (default: true). Use --no-use-adc to force service-account JSON.",
+    )
     args = parser.parse_args()
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -174,8 +190,19 @@ def main():
     if args.local_file:
         sessions = load_local_session_records(args.local_file)
     else:
-        cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
-        firebase_admin.initialize_app(cred)
+        app_options = {}
+        if args.project_id:
+            app_options["projectId"] = args.project_id
+        if args.use_adc:
+            firebase_admin.initialize_app(options=(app_options or None))
+        else:
+            if not args.service_account or not os.path.exists(args.service_account):
+                raise FileNotFoundError(
+                    f"Service account JSON not found: {args.service_account}. "
+                    "Pass --service-account <path> or use --use-adc."
+                )
+            cred = credentials.Certificate(args.service_account)
+            firebase_admin.initialize_app(cred, options=(app_options or None))
         db = firestore.client()
         # Use collection-group query to include sessions even when parent sleep_studies/{pid}
         # doc is missing (Firestore allows subcollections without parent doc body).

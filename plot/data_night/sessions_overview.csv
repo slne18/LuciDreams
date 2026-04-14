@@ -1,10 +1,2 @@
 pid,night_number,session_doc_id,session_start_boston,session_end_boston,has_general,rem_episode_count,train_count,induction_cue_count,motion_points
-Kiki,1,C20Ow1A34i6yJQqldCHb,00:10:19,06:35:53,True,8,2,28,22661
-Soso,1,bBxS3VX5lqZfcQvkvvKY,23:56:38,09:15:11,True,8,5,107,32855
-Try,4,9zZ9qdo7PGWFOMs14f1u,17:42:59,17:43:59,True,0,0,0,59
-Try,6,MgT9UnmVJ0KTGnEmRm0l,17:49:10,17:50:14,True,0,0,0,64
-Try,3,Ro9kqgOLSFRfuAuVoBim,15:49:19,16:21:12,True,0,0,0,1911
-Try,2,ZELitbnLEzSD3S2BkEOT,15:04:34,15:05:42,True,1,1,0,66
-Try,7,dcLuwFwHfgzXa7YPrBck,19:09:34,19:10:03,True,0,0,0,29
-Try,1,kv1OakRu94oBB5rjXGHc,14:56:31,14:57:14,True,1,1,0,43
-Try,5,tp9GoMb730QqpSMoi9G1,17:48:11,17:48:11,True,0,0,0,0
+Solene,1,Cpv3JPnT9jKrWawB3X6Y,23:46:09,08:11:26,True,21,4,106,30289

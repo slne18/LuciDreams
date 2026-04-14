@@ -1,4 +1,4 @@
-var capacitorFilesystem = (function (exports, core) {
+var capacitorFilesystemPluginCapacitor = (function (exports, core, synapse) {
     'use strict';
 
     exports.Directory = void 0;
@@ -8,7 +8,7 @@ var capacitorFilesystem = (function (exports, core) {
          * On iOS it's the app's documents directory.
          * Use this directory to store user-generated content.
          * On Android it's the Public Documents folder, so it's accessible from other apps.
-         * It's not accesible on Android 10 unless the app enables legacy External Storage
+         * It's not accessible on Android 10 unless the app enables legacy External Storage
          * by adding `android:requestLegacyExternalStorage="true"` in the `application` tag
          * in the `AndroidManifest.xml`.
          * On Android 11 or newer the app can only access the files/folders the app created.
@@ -58,14 +58,36 @@ var capacitorFilesystem = (function (exports, core) {
          * The external storage directory.
          * On iOS it will use the Documents directory.
          * On Android it's the primary shared/external storage directory.
-         * It's not accesible on Android 10 unless the app enables legacy External Storage
+         * It's not accessible on Android 10 unless the app enables legacy External Storage
          * by adding `android:requestLegacyExternalStorage="true"` in the `application` tag
          * in the `AndroidManifest.xml`.
-         * It's not accesible on Android 11 or newer.
+         * It's not accessible on Android 11 or newer.
          *
          * @since 1.0.0
          */
         Directory["ExternalStorage"] = "EXTERNAL_STORAGE";
+        /**
+         * The external cache directory.
+         * On iOS it will use the Documents directory.
+         * On Android it's the primary shared/external cache.
+         *
+         * @since 7.1.0
+         */
+        Directory["ExternalCache"] = "EXTERNAL_CACHE";
+        /**
+         * The Library directory without cloud backup. Used in iOS.
+         * On Android it's the directory holding application files.
+         *
+         * @since 7.1.0
+         */
+        Directory["LibraryNoCloud"] = "LIBRARY_NO_CLOUD";
+        /**
+         * A temporary directory for iOS.
+         * On Android it's the directory holding the application cache.
+         *
+         * @since 7.1.0
+         */
+        Directory["Temporary"] = "TEMPORARY";
     })(exports.Directory || (exports.Directory = {}));
     exports.Encoding = void 0;
     (function (Encoding) {
@@ -104,16 +126,15 @@ var capacitorFilesystem = (function (exports, core) {
     const FilesystemEncoding = exports.Encoding;
 
     const Filesystem = core.registerPlugin('Filesystem', {
-        web: () => Promise.resolve().then(function () { return web; }).then(m => new m.FilesystemWeb()),
+        web: () => Promise.resolve().then(function () { return web; }).then((m) => new m.FilesystemWeb()),
     });
+    synapse.exposeSynapse();
 
     function resolve(path) {
-        const posix = path.split('/').filter(item => item !== '.');
+        const posix = path.split('/').filter((item) => item !== '.');
         const newPosix = [];
-        posix.forEach(item => {
-            if (item === '..' &&
-                newPosix.length > 0 &&
-                newPosix[newPosix.length - 1] !== '..') {
+        posix.forEach((item) => {
+            if (item === '..' && newPosix.length > 0 && newPosix[newPosix.length - 1] !== '..') {
                 newPosix.pop();
             }
             else {
@@ -127,8 +148,7 @@ var capacitorFilesystem = (function (exports, core) {
         children = resolve(children);
         const pathsA = parent.split('/');
         const pathsB = children.split('/');
-        return (parent !== children &&
-            pathsA.every((value, index) => value === pathsB[index]));
+        return parent !== children && pathsA.every((value, index) => value === pathsB[index]);
     }
     class FilesystemWeb extends core.WebPlugin {
         constructor() {
@@ -139,6 +159,7 @@ var capacitorFilesystem = (function (exports, core) {
             /**
              * Function that performs a http request to a server and downloads the file to the specified destination
              *
+             * @deprecated Use the @capacitor/file-transfer plugin instead.
              * @param options the options for the download operation
              * @returns a promise that resolves with the download file result
              */
@@ -188,6 +209,9 @@ var capacitorFilesystem = (function (exports, core) {
                 });
                 return { path: result.uri, blob };
             };
+        }
+        readFileInChunks(_options, _callback) {
+            throw this.unavailable('Method not implemented.');
         }
         async initDb() {
             if (this._db !== undefined) {
@@ -385,9 +409,7 @@ var capacitorFilesystem = (function (exports, core) {
             const entry = (await this.dbRequest('get', [path]));
             if (entry === undefined)
                 throw Error('File does not exist.');
-            const entries = await this.dbIndexRequest('by_folder', 'getAllKeys', [
-                IDBKeyRange.only(path),
-            ]);
+            const entries = await this.dbIndexRequest('by_folder', 'getAllKeys', [IDBKeyRange.only(path)]);
             if (entries.length !== 0)
                 throw Error('Folder is not empty.');
             await this.dbRequest('delete', [path]);
@@ -512,6 +534,7 @@ var capacitorFilesystem = (function (exports, core) {
             if (entry === undefined)
                 throw Error('Entry does not exist.');
             return {
+                name: entry.path.substring(path.length + 1),
                 type: entry.type,
                 size: entry.size,
                 ctime: entry.ctime,
@@ -710,9 +733,7 @@ var capacitorFilesystem = (function (exports, core) {
     exports.FilesystemDirectory = FilesystemDirectory;
     exports.FilesystemEncoding = FilesystemEncoding;
 
-    Object.defineProperty(exports, '__esModule', { value: true });
-
     return exports;
 
-})({}, capacitorExports);
+})({}, capacitorExports, synapse);
 //# sourceMappingURL=plugin.js.map

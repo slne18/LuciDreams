@@ -12,6 +12,10 @@ lucidreans-firebase-adminsdk-fbsvc-4b27ed98c4.json
 *.p12
 *secret*.json
 *credentials*.json
+*.jks
+*.keystore
+LuciDreams-main/cap-app/android/gradle.properties
+LuciDreams-main/cap-app/android/key.properties
 
 ## Firebase local config (contains API key/project identifiers)
 LuciDreams-main/static/firebase-config.js
