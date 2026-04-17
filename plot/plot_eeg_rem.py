@@ -27,6 +27,7 @@ EEG_DATA_DIR = os.path.join(BASE_DIR, "EEG")
 EEG_PLOTS_DIR = os.path.join(BASE_DIR, "eeg_plots")
 DEFAULT_OUTPUT_TEMPLATE = os.path.join(EEG_PLOTS_DIR, "eeg_rem_phases_{pid}.png")
 SECONDS_PER_DAY = 24 * 3600
+LOWPASS_HZ = 40.0
 
 
 def sec_of_day_to_elapsed(sec_of_day: float, ref_sec_of_day: float) -> float:
@@ -182,8 +183,8 @@ def main() -> None:
     p.add_argument("--notch-hz", type=float, default=60.0, help="Deprecated (kept for CLI compatibility)")
     p.add_argument("--notch-q", type=float, default=30.0, help="Deprecated (kept for CLI compatibility)")
     p.add_argument("--per-rem-lowpass-hz", type=float, default=40.0, help="Low-pass cutoff in Hz for per-REM plotting")
-    p.add_argument("--per-rem-pre-sec", type=int, default=300, help="Seconds shown before REM start in per-rem mode")
-    p.add_argument("--per-rem-post-sec", type=int, default=300, help="Seconds shown after REM end in per-rem mode")
+    p.add_argument("--per-rem-pre-sec", type=int, default=180, help="Seconds shown before REM start in per-rem mode")
+    p.add_argument("--per-rem-post-sec", type=int, default=180, help="Seconds shown after REM end in per-rem mode")
     p.add_argument("--output", default=None)
     args = p.parse_args()
     night_suffix = f"_night{args.night_number}" if args.night_number is not None else ""
@@ -267,21 +268,20 @@ def main() -> None:
         if rem_df.empty:
             raise ValueError("No REM episodes with both disruptive and induction cues.")
 
-    # Load EEG
+    # Load EEG with only LP 40 Hz filtering (no smoothing, no aggregation)
     eeg = pd.read_csv(
         eeg_csv,
         usecols=["TimeStamp", "RAW_AF7", "RAW_AF8"],
         parse_dates=["TimeStamp"],
     )
     eeg = eeg.dropna(subset=["TimeStamp"]).sort_values("TimeStamp").reset_index(drop=True)
+    eeg["RAW_AF7"] = pd.to_numeric(eeg["RAW_AF7"], errors="coerce")
+    eeg["RAW_AF8"] = pd.to_numeric(eeg["RAW_AF8"], errors="coerce")
+    eeg = eeg.dropna(subset=["RAW_AF7", "RAW_AF8"]).copy()
     fs_hz = estimate_sampling_hz(eeg["TimeStamp"])
-    af7_col = "RAW_AF7"
-    af8_col = "RAW_AF8"
-    if fs_hz is not None and fs_hz > 2.5 and args.per_rem_lowpass_hz > 0:
-        eeg["RAW_AF7_lp"] = lowpass_filter(eeg["RAW_AF7"], fs_hz, args.per_rem_lowpass_hz)
-        eeg["RAW_AF8_lp"] = lowpass_filter(eeg["RAW_AF8"], fs_hz, args.per_rem_lowpass_hz)
-        af7_col = "RAW_AF7_lp"
-        af8_col = "RAW_AF8_lp"
+    if fs_hz is not None and fs_hz > 2.5:
+        eeg["RAW_AF7"] = lowpass_filter(eeg["RAW_AF7"], fs_hz, LOWPASS_HZ)
+        eeg["RAW_AF8"] = lowpass_filter(eeg["RAW_AF8"], fs_hz, LOWPASS_HZ)
     eeg["sec_of_day"] = (
         eeg["TimeStamp"].dt.hour * 3600
         + eeg["TimeStamp"].dt.minute * 60
@@ -309,25 +309,15 @@ def main() -> None:
     if sess.empty:
         raise ValueError("No EEG samples found in selected session interval.")
 
-    # Elapsed seconds since session start and 1-second aggregation for readability/speed.
+    # Elapsed seconds since session start (raw sample-level).
     sess["elapsed_sec"] = np.where(
         sess["sec_of_day"] >= session_start_sod,
         sess["sec_of_day"] - session_start_sod,
         sess["sec_of_day"] + SECONDS_PER_DAY - session_start_sod,
     )
-    sess["elapsed_bin"] = np.floor(sess["elapsed_sec"]).astype(int)
-    agg = sess.groupby("elapsed_bin", as_index=False).agg(
-        RAW_AF7=(af7_col, "mean"),
-        RAW_AF8=(af8_col, "mean"),
-    )
-    agg["AF7_plot"] = pd.to_numeric(agg["RAW_AF7"], errors="coerce")
-    agg["AF8_plot"] = pd.to_numeric(agg["RAW_AF8"], errors="coerce")
-    smooth_win = max(1, int(args.overview_smooth_sec))
-    agg["AF7_overview"] = agg["AF7_plot"].rolling(window=smooth_win, center=True, min_periods=1).mean()
-    agg["AF8_overview"] = agg["AF8_plot"].rolling(window=smooth_win, center=True, min_periods=1).mean()
-    if args.max_points > 0 and len(agg) > args.max_points:
-        stride = int(math.ceil(len(agg) / float(args.max_points)))
-        agg = agg.iloc[::stride].copy()
+    if args.max_points > 0 and len(sess) > args.max_points:
+        stride = int(math.ceil(len(sess) / float(args.max_points)))
+        sess = sess.iloc[::stride].copy()
 
     cue_color = {"disruptive": "red", "induction": "green"}
     rem_episode_ids = set(rem_df["episode_index"].astype(int).tolist())
@@ -335,8 +325,8 @@ def main() -> None:
 
     if args.plot_mode in ("overview", "both"):
         fig, ax = plt.subplots(figsize=(18, 7))
-        ax.plot(agg["elapsed_bin"], agg["AF7_overview"], color="tab:blue", linewidth=0.9, alpha=0.9, label=f"AF7 (raw, smooth={smooth_win}s)")
-        ax.plot(agg["elapsed_bin"], agg["AF8_overview"], color="tab:orange", linewidth=0.9, alpha=0.9, label=f"AF8 (raw, smooth={smooth_win}s)")
+        ax.plot(sess["elapsed_sec"], sess["RAW_AF7"], color="tab:blue", linewidth=0.8, alpha=0.9, label="AF7 (LP 40Hz)")
+        ax.plot(sess["elapsed_sec"], sess["RAW_AF8"], color="tab:orange", linewidth=0.8, alpha=0.9, label="AF8 (LP 40Hz)")
 
         # REM windows over full session timeline.
         first_rem_label = True
@@ -372,15 +362,14 @@ def main() -> None:
             ax.axvline(cue_x, color=cue_color.get(ct, "tab:purple"), linestyle=":", linewidth=0.8, alpha=0.7)
 
         # Build concise HH:MM x ticks from elapsed seconds.
-        total_sec = int(agg["elapsed_bin"].max()) if not agg.empty else 0
+        total_sec = int(sess["elapsed_sec"].max()) if not sess.empty else 0
         tick_step = 30 * 60  # every 30 minutes
         ticks = np.arange(0, max(total_sec + tick_step, tick_step), tick_step)
         ax.set_xticks(ticks)
         ax.set_xticklabels([format_elapsed_hms(t)[:5] for t in ticks], rotation=0)
 
-        filt_tag = f"LP {args.per_rem_lowpass_hz:g}Hz only" if (fs_hz is not None and fs_hz > 2.5 and args.per_rem_lowpass_hz > 0) else "raw (no filter)"
         ax.set_title(
-            f"EEG session overview with REM windows | pid={args.pid} | night={args.night_number} | start={session_start_hms} | {filt_tag}"
+            f"EEG session overview with REM windows (LP 40Hz) | pid={args.pid} | night={args.night_number} | start={session_start_hms}"
         )
         ax.set_xlabel("Elapsed from session start (HH:MM)")
         ax.set_ylabel("EEG raw amplitude")
@@ -390,9 +379,7 @@ def main() -> None:
         fig.savefig(overview_output_png, dpi=120)
         print(f"Saved plot to {overview_output_png}")
         print(f"REM rows considered: {len(rem_df)}")
-        print(f"Session points plotted: {len(agg)}")
-        if fs_hz is not None:
-            print(f"Estimated sampling rate: {fs_hz:.2f} Hz")
+        print(f"Session points plotted: {len(sess)}")
         plt.close(fig)
 
     if args.plot_mode in ("per-rem", "both"):
@@ -434,19 +421,16 @@ def main() -> None:
                     base_start = min(base_start, min(cue_abs_times))
                     base_end = max(base_end, max(cue_abs_times))
                 win_start_x = max(0, base_start - max(0, args.per_rem_pre_sec))
-                win_end_x = min(int(agg["elapsed_bin"].max()), base_end + max(0, args.per_rem_post_sec))
-                seg = agg[(agg["elapsed_bin"] >= win_start_x) & (agg["elapsed_bin"] <= win_end_x)].copy()
+                win_end_x = min(float(sess["elapsed_sec"].max()), base_end + max(0, args.per_rem_post_sec))
+                seg = sess[(sess["elapsed_sec"] >= win_start_x) & (sess["elapsed_sec"] <= win_end_x)].copy()
                 if seg.empty:
                     ax.text(0.5, 0.5, f"REM #{ep_idx}: no EEG data", transform=ax.transAxes, ha="center", va="center")
                     ax.axis("off")
                     continue
                 plotted_count += 1
-                relx = seg["elapsed_bin"] - win_start_x
-                label_suffix = "raw"
-                if fs_hz is not None and fs_hz > 2.5 and args.per_rem_lowpass_hz > 0:
-                    label_suffix = f"raw, LP {args.per_rem_lowpass_hz:g}Hz"
-                ax.plot(relx, seg["AF7_plot"], color="tab:blue", linewidth=0.9, alpha=0.9, label=f"AF7 ({label_suffix})")
-                ax.plot(relx, seg["AF8_plot"], color="tab:orange", linewidth=0.9, alpha=0.9, label=f"AF8 ({label_suffix})")
+                relx = seg["elapsed_sec"] - win_start_x
+                ax.plot(relx, seg["RAW_AF7"], color="tab:blue", linewidth=0.9, alpha=0.9, label="AF7 (LP 40Hz)")
+                ax.plot(relx, seg["RAW_AF8"], color="tab:orange", linewidth=0.9, alpha=0.9, label="AF8 (LP 40Hz)")
                 rem_start_rel = rem_start_x - win_start_x
                 rem_end_rel = rem_end_x - win_start_x
                 ax.axvspan(rem_start_rel, rem_end_rel, alpha=0.12, color="tab:orange", label="REM window")
@@ -497,7 +481,7 @@ def main() -> None:
             for j in range(len(rem_plot_df), len(axes)):
                 axes[j].axis("off")
             fig.suptitle(
-                f"EEG per REM phase | pid={args.pid} | night={args.night_number} | session_start={session_start_hms} | plotted={plotted_count}/{len(rem_plot_df)}",
+                f"EEG per REM phase (LP 40Hz) | pid={args.pid} | night={args.night_number} | session_start={session_start_hms} | plotted={plotted_count}/{len(rem_plot_df)}",
                 fontsize=11,
             )
             fig.tight_layout(rect=[0, 0, 1, 0.97])
