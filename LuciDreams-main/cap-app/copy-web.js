@@ -40,27 +40,39 @@ console.log('Written www/index.html');
   }
 });
 
-// Beep asset for native audio: create a minimal placeholder if missing
+// Beep asset for native audio: create an audible fallback tone if missing
 const beepPath = path.join(DST_SOUNDS, 'beep.wav');
 if (!fs.existsSync(beepPath)) {
-  // Minimal 44-byte WAV header + a few silent samples so the file exists; replace with real beep for production
+  const sampleRate = 44100;
+  const durationSec = 0.2;
+  const freqHz = 1000;
+  const totalSamples = Math.floor(sampleRate * durationSec);
+  const pcm = Buffer.alloc(totalSamples * 2);
+  for (let i = 0; i < totalSamples; i++) {
+    const t = i / sampleRate;
+    let env = 1;
+    const fade = Math.floor(sampleRate * 0.01);
+    if (i < fade) env = i / fade;
+    else if (i > totalSamples - fade) env = Math.max(0, (totalSamples - i) / fade);
+    const sample = Math.max(-32768, Math.min(32767, Math.round(Math.sin(2 * Math.PI * freqHz * t) * env * 0.8 * 32767)));
+    pcm.writeInt16LE(sample, i * 2);
+  }
   const header = Buffer.alloc(44);
   header.write('RIFF', 0);
-  header.writeUInt32LE(44 + 8820, 4); // file size - 8 (0.1s at 44100 16bit mono)
+  header.writeUInt32LE(36 + pcm.length, 4); // file size - 8
   header.write('WAVE', 8);
   header.write('fmt ', 12);
   header.writeUInt32LE(16, 16);
   header.writeUInt16LE(1, 20);   // PCM
   header.writeUInt16LE(1, 22);   // mono
-  header.writeUInt32LE(44100, 24);
-  header.writeUInt32LE(88200, 28);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28);
   header.writeUInt16LE(2, 32);
   header.writeUInt16LE(16, 34);
   header.write('data', 36);
-  header.writeUInt32LE(8820, 40);
-  const samples = Buffer.alloc(8820, 0); // 0.1s silence
-  fs.writeFileSync(beepPath, Buffer.concat([header, samples]));
-  console.log('Created www/sounds/beep.wav (placeholder – replace with real 800Hz beep for cues)');
+  header.writeUInt32LE(pcm.length, 40);
+  fs.writeFileSync(beepPath, Buffer.concat([header, pcm]));
+  console.log('Created www/sounds/beep.wav (audible fallback tone)');
 }
 
 // Ensure iOS native-audio bundled path contains beep.wav

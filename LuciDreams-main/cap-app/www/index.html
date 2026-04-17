@@ -87,6 +87,42 @@
       border: none;
       box-shadow: none;
     }
+    .luci .step-content.study-layout {
+      align-items: stretch;
+      text-align: left;
+      gap: 14px;
+      padding: 24px 20px 28px;
+    }
+    .luci .study-panel {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+    }
+    .luci .study-lead {
+      color: var(--text);
+      font-size: 0.96rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+    .luci .study-section-title {
+      color: var(--primary-accent);
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin: 0 0 4px 0;
+    }
+    .luci .study-section-body {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+    .luci .study-cta-wrap {
+      display: flex;
+      justify-content: center;
+      margin-top: 6px;
+      background: transparent;
+    }
     .luci input[type="text"] {
       width: 100%;
       max-width: 280px;
@@ -740,10 +776,10 @@
   const DISRUPTIVE_AROUSAL_RAW_PERCENTILE = 0.90;
   const USER_MIN_VOLUME_CEILING_DELTA = 0.20;
   const CALIBRATION_VOLUME_STEP = 1 / 16; // iOS hardware volume increments are typically 16 steps
-  // --- TEMP TEST HARNESS (delete this block when done) ---
-  const ENABLE_FAKE_REM_TEST = false; // Disabled for normal sleep runs.
-  const FAKE_REM_TRIGGER_AFTER_SEC = 30; // Trigger fake REM after 30s
-  // --- END TEMP TEST HARNESS ---
+  // Unified app test mode switch:
+  // - true: CONDITION_POOL=[4,5] and "Skip training" is visible
+  // - false: CONDITION_POOL=[0..7] and no skip button
+  const APP_TEST_MODE = false;
   // One train = 2min disruptive + LD induction (until arousal)
   const DISRUPTIVE_PERIOD_SEC = 120;
   const DISRUPTIVE_SOUND_DURATION_MS = 3000;    // disruptive beep lasts 3 seconds
@@ -768,17 +804,20 @@
     for (var j = 15; j <= 100; j += 5) levels.push(j / 100);
     return levels;
   })();
-  const LD_BEEP_DURATION_MS = 200;
+  const LD_BEEP_DURATION_MS = 500;
   // App-wide cue
   const DEFAULT_BEEP_DURATION_MS = 150;
-  // TEST MODE: restrict nightly conditions to 4 or 5 only.
-  // 4=Voice, 5=Beep
-  const CONDITION_POOL = [4, 5];
-  const TRAINING_DURATION_MS = 10 * 60 * 1000;
+  const CONDITION_POOL = APP_TEST_MODE ? [4, 5] : [0, 1, 2, 3, 4, 5, 6, 7];
+  const SHOW_SKIP_TRAINING = APP_TEST_MODE;
+  const TRAINING_DURATION_MS = 25 * 60 * 1000;
   const TRAINING_CUE_INTERVAL_MS = 1000;
+  const TRAINING_POST_GUIDANCE_INTERVALS_SEC = [45, 70, 55, 65, 70, 80, 65, 60, 75, 75, 90, 120];
+  const TRAINING_MIN_SECONDS_FOR_NIGHT_ELAPSED = Math.floor(TRAINING_DURATION_MS / 1000);
   const TRAINING_INTRO_DELAY_MS = 2000;
   const TRAINING_CUE_VOLUME = 0.8;
   const TRAINING_GUIDANCE_COUNT = 4;
+  const TRAINING_GUIDED_STEP_WATCHDOG_MS = 120000;
+  const TRAINING_CUE_WATCHDOG_MS = 45000;
   const TRAINING_INTRO_ASSET = 'sounds/training_intro.mp3';
   const TRAINING_GUIDANCE_ASSET = 'sounds/training_guidance.mp3';
   const CONDITION_LABELS = {
@@ -882,11 +921,6 @@
     disruptiveWaveCurrentVolume: 0,
     disruptiveWaveArousalVolume: null,
     disruptiveWaveTargetVolume: 1,
-    fakeRemTestActive: false,
-    fakeRemTestTimeoutId: null,
-    fakeTestSequenceActive: false,
-    fakeTestConditions: [6, 7],
-    fakeTestConditionIndex: 0,
     trainingActive: false,
     trainingComplete: false,
     trainingStartMs: null,
@@ -896,6 +930,7 @@
     trainingIntroStarted: false,
     trainingCueInFlight: false,
     trainingNextCueAtMs: null,
+    trainingPostCueCountPlayed: 0,
     trainingPaused: false,
     trainingPauseStartedAtMs: null,
     trainingPausedAccumMs: 0,
@@ -905,6 +940,7 @@
     trainingCurrentNativeTimeoutId: null,
     trainingCurrentHtmlAudio: null,
     trainingCueWatchdogTimeoutId: null,
+    trainingSkipped: false,
     voiceVariantCachePid: null,
     voiceVariantBlobs: null
   };
@@ -987,11 +1023,6 @@
   }
 
   var nextTrainTimeoutId = null;
-  // --- TEMP TEST HARNESS ---
-  function isFakeConditionSweepModeActive() {
-    return !!(ENABLE_FAKE_REM_TEST && state.fakeRemTestActive && state.fakeTestSequenceActive);
-  }
-  // --- END TEMP TEST HARNESS ---
   // Returns true when a train actually delivered at least one cue.
   function trainHasDeliveredCue(train) {
     if (!train) return false;
@@ -1014,44 +1045,12 @@
   }
   // Checks whether has reached night train cap.
   function hasReachedNightTrainCap() {
-    if (isFakeConditionSweepModeActive()) return false;
     return totalNightTrainCount() >= NIGHT_MAX_TRAINS;
   }
   // Checks whether has reached episode train cap.
   function hasReachedEpisodeTrainCap() {
-    if (isFakeConditionSweepModeActive()) return false;
     return countDeliveredTrains(state.currentEpisodeTrains || []) >= REM_EPISODE_MAX_TRAINS;
   }
-  // --- TEMP TEST HARNESS  ---
-  function setupTemporaryFakeRemForTesting() {
-    if (!ENABLE_FAKE_REM_TEST) return;
-    if (state.fakeRemTestTimeoutId) {
-      clearTimeout(state.fakeRemTestTimeoutId);
-      state.fakeRemTestTimeoutId = null;
-    }
-    state.fakeRemTestActive = false;
-    state.fakeRemTestTimeoutId = setTimeout(function() {
-      state.fakeRemTestTimeoutId = null;
-      if (state.appStep !== 5 || state.inRemEpisode) return;
-      state.fakeRemTestActive = true;
-      state.fakeTestSequenceActive = true;
-      state.fakeTestConditionIndex = 0;
-      state.fakeTestConditions = [6, 7];
-      state.tonight_condition = state.fakeTestConditions[state.fakeTestConditionIndex];
-      state.inRemEpisode = true;
-      state.remEpisodeStartSeconds = state.secondsRecorded;
-      state.remEpisodeStartTime = new Date().toISOString();
-      state.currentRemEpisodeEntryThreshold = null;
-      state.currentEpisodeTrains = [];
-      state.lastCueEpoch = 0;
-      if (state.tonight_condition !== 0 && !hasReachedNightTrainCap() && !hasReachedEpisodeTrainCap()) {
-        startTrain();
-      }
-      showSnackbar('TEMP TEST: fake REM started (2 min).');
-      render();
-    }, FAKE_REM_TRIGGER_AFTER_SEC * 1000);
-  }
-  // --- END TEMP TEST HARNESS ---
 
   function scheduleNextTrain() {
     if (nextTrainTimeoutId) clearTimeout(nextTrainTimeoutId);
@@ -1362,22 +1361,6 @@
     state.lastCueEpoch = state.secondsRecorded;
     if (state.soundRunning) stopSound();
     cancelScheduledCue();
-    if (isFakeConditionSweepModeActive()) {
-      if (state.fakeTestConditionIndex < state.fakeTestConditions.length - 1) {
-        state.fakeTestConditionIndex++;
-        state.tonight_condition = state.fakeTestConditions[state.fakeTestConditionIndex];
-        state.inductionCap = 1;
-        state.nextTrainInductionCap = null;
-        if (state.appStep === 5 && state.inRemEpisode && state.trainPhase === null) startTrain();
-      } else {
-        state.fakeTestSequenceActive = false;
-        state.fakeRemTestActive = false;
-        state.inRemEpisode = false;
-        showSnackbar('TEMP TEST: condition sweep completed.');
-      }
-      render();
-      return;
-    }
     if (arousalReached) {
       scheduleNextTrain(); // 5 min no stimulation, then next train
     } else {
@@ -1744,10 +1727,12 @@
     // Use HTML audio for intro/guidance so pause/resume can continue from exact currentTime.
     stopTrainingCurrentAudio();
     var done = false;
+    var hardTimeoutId = null;
     // Handles finish.
     function finish() {
       if (done) return;
       done = true;
+      if (hardTimeoutId) { clearTimeout(hardTimeoutId); hardTimeoutId = null; }
       stopTrainingCurrentAudio();
       if (typeof onEnded === 'function') onEnded();
     }
@@ -1756,6 +1741,8 @@
     audio.volume = 0.8; // training assets always at 80%
     audio.onended = finish;
     audio.onerror = finish;
+    // Safety net: some WebView/audio states can hang without firing ended/error.
+    hardTimeoutId = setTimeout(finish, TRAINING_GUIDED_STEP_WATCHDOG_MS);
     audio.play().catch(function() { finish(); });
   }
   // Plays training intro dummy.
@@ -1787,11 +1774,16 @@
     disableNoSleep();
   }
   // Handles finish training phase.
-  function finishTrainingPhase() {
+  function finishTrainingPhase(skipped) {
     stopTrainingPhase();
     state.trainingComplete = true;
     state.trainingRemainingSec = 0;
-    state.appStep = 2;
+    state.trainingSkipped = !!skipped;
+    if (!state.trainingSkipped) {
+      var minNightSecondsAtTrainingEnd = TRAINING_MIN_SECONDS_FOR_NIGHT_ELAPSED;
+      state.secondsRecorded = Math.max(state.secondsRecorded || 0, minNightSecondsAtTrainingEnd);
+    }
+    state.appStep = 5;
     render();
   }
   // Emits training cue.
@@ -1799,14 +1791,15 @@
     if (!state.trainingActive || state.trainingPaused || state.trainingCueInFlight) return;
     state.trainingCueInFlight = true;
     state.trainingCueCount++;
+    var idx = state.trainingCueCount;
+    var watchdogMs = (idx <= TRAINING_GUIDANCE_COUNT) ? TRAINING_GUIDED_STEP_WATCHDOG_MS : TRAINING_CUE_WATCHDOG_MS;
     if (state.trainingCueWatchdogTimeoutId) clearTimeout(state.trainingCueWatchdogTimeoutId);
     state.trainingCueWatchdogTimeoutId = setTimeout(function() {
       if (!state.trainingActive || state.trainingPaused) return;
       state.trainingCueInFlight = false;
       state.trainingNextCueAtMs = Date.now() + 1000;
       render();
-    }, 45000);
-    var idx = state.trainingCueCount;
+    }, watchdogMs);
     playTrainingCue(function() {
       if (!state.trainingActive) return;
       if (state.trainingPaused) {
@@ -1827,14 +1820,27 @@
             return;
           }
           state.trainingCueInFlight = false;
-          // First 4 cue+guidance pairs continue immediately after guidance.
-          state.trainingNextCueAtMs = Date.now() + 1000;
+          if (idx < TRAINING_GUIDANCE_COUNT) {
+            // First 4 cue+guidance pairs continue immediately after guidance.
+            state.trainingNextCueAtMs = Date.now() + TRAINING_CUE_INTERVAL_MS;
+          } else {
+            // After the 4th cue+guidance pair, switch to the long interval schedule.
+            state.trainingNextCueAtMs = Date.now() + (TRAINING_POST_GUIDANCE_INTERVALS_SEC[0] * 1000);
+          }
           if (state.trainingCueWatchdogTimeoutId) { clearTimeout(state.trainingCueWatchdogTimeoutId); state.trainingCueWatchdogTimeoutId = null; }
           render();
         });
       } else {
+        state.trainingPostCueCountPlayed++;
+        if (state.trainingPostCueCountPlayed >= TRAINING_POST_GUIDANCE_INTERVALS_SEC.length) {
+          if (state.trainingCueWatchdogTimeoutId) { clearTimeout(state.trainingCueWatchdogTimeoutId); state.trainingCueWatchdogTimeoutId = null; }
+          state.trainingCueInFlight = false;
+          state.trainingNextCueAtMs = null; // Cue plan is complete; remain silent until training timer ends.
+          return;
+        }
+        var nextIntervalSec = TRAINING_POST_GUIDANCE_INTERVALS_SEC[state.trainingPostCueCountPlayed];
         state.trainingCueInFlight = false;
-        state.trainingNextCueAtMs = Date.now() + TRAINING_CUE_INTERVAL_MS;
+        state.trainingNextCueAtMs = Date.now() + (nextIntervalSec * 1000);
         if (state.trainingCueWatchdogTimeoutId) { clearTimeout(state.trainingCueWatchdogTimeoutId); state.trainingCueWatchdogTimeoutId = null; }
         render();
       }
@@ -1878,16 +1884,18 @@
   }
   // Handles skip training phase.
   function skipTrainingPhase() {
-    finishTrainingPhase();
+    finishTrainingPhase(true);
   }
 
   // Handles restart training from beginning.
   function restartTrainingFromBeginning() {
     if (!state.trainingActive) return;
     stopTrainingCurrentAudio();
+    state.trainingSkipped = false;
     state.trainingStartMs = Date.now();
     state.trainingRemainingSec = Math.floor(TRAINING_DURATION_MS / 1000);
     state.trainingCueCount = 0;
+    state.trainingPostCueCountPlayed = 0;
     state.trainingIntroDone = false;
     state.trainingIntroStarted = false;
     state.trainingCueInFlight = false;
@@ -1901,9 +1909,11 @@
   function startTrainingPhaseIfNeeded() {
     if (state.trainingActive || state.trainingComplete || state.appStep !== 'training') return;
     state.trainingActive = true;
+    state.trainingSkipped = false;
     state.trainingStartMs = Date.now();
     state.trainingRemainingSec = Math.floor(TRAINING_DURATION_MS / 1000);
     state.trainingCueCount = 0;
+    state.trainingPostCueCountPlayed = 0;
     state.trainingIntroDone = false;
     state.trainingIntroStarted = false;
     state.trainingCueInFlight = false;
@@ -1923,7 +1933,7 @@
       var elapsed = getTrainingElapsedMs(now);
       var remain = Math.max(0, Math.ceil((TRAINING_DURATION_MS - elapsed) / 1000));
       state.trainingRemainingSec = remain;
-      if (remain <= 0) { finishTrainingPhase(); return; }
+      if (remain <= 0) { finishTrainingPhase(false); return; }
       if (!state.trainingPaused) {
         if (!state.trainingIntroStarted && elapsed >= TRAINING_INTRO_DELAY_MS) {
           state.trainingIntroStarted = true;
@@ -2321,7 +2331,7 @@ function playFixedBeep75(durationMs, onEnded) {
       console.log('REM gate (4h): REM logic enabled. n=', seriesAtGate.length, 'mean=', meanAtGate, '(stillness compares current rolling value vs evolving current-series distribution at', REM_STILLNESS_PERCENT_OF_SERIES_MEAN * 100, '%)');
     }
 
-    const afterGate = state.fakeRemTestActive || (
+    const afterGate = (
       state.secondsRecorded > REM_GATE_SECONDS &&
       state.smoothedMotionSeries.length > 0 &&
       state.smoothedMotionCurrent != null
@@ -2335,7 +2345,6 @@ function playFixedBeep75(durationMs, onEnded) {
       var movementNoiseFloor = seriesMean * REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
       var belowCount = seriesAll.reduce(function(count, v) { return count + (smoothedMotion < v ? 1 : 0); }, 0);
       var isStillSmoothed = (belowCount / seriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
-      if (state.fakeRemTestActive) isStillSmoothed = true;
       var rawAboveCount = rawSeriesAll.reduce(function(count, v) { return count + (motionForSecond > v ? 1 : 0); }, 0);
       var isRawAbove80PercentOfSeries = rawSeriesAll.length > 0 && (rawAboveCount / rawSeriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
       if (state.inRemEpisode) {
@@ -2361,7 +2370,6 @@ function playFixedBeep75(durationMs, onEnded) {
           trains: trains
         });
         state.inRemEpisode = false;
-        state.fakeRemTestActive = false;
         state.consecutiveRemSeconds = 0;
         state.remEntryStableStartEpoch = null;
         state.currentRemEpisodeEntryThreshold = null;
@@ -2395,7 +2403,7 @@ function playFixedBeep75(durationMs, onEnded) {
 
       // Arousal check in disruptive phase:
       // if post-cue raw metric (single value when window=1s, otherwise mean) > REM-local raw percentile baseline.
-      if (!state.fakeRemTestActive && state.trainPhase === 'disruptive' && state.lastDisruptiveCueEpoch != null) {
+      if (state.trainPhase === 'disruptive' && state.lastDisruptiveCueEpoch != null) {
         var secSinceDisruptiveCue = state.secondsRecorded - state.lastDisruptiveCueEpoch;
         if (secSinceDisruptiveCue > 0 && secSinceDisruptiveCue <= AROUSAL_POST_CUE_WINDOW_SEC) {
           state.lastDisruptiveCuePostRawValues.push(motionForSecond);
@@ -2429,7 +2437,7 @@ function playFixedBeep75(durationMs, onEnded) {
 
       // Arousal check in induction phase:
       // if post-cue raw metric (single value when window=1s, otherwise mean) > REM-local raw percentile baseline.
-      if (!state.fakeRemTestActive && state.trainPhase === 'induction' && state.lastInductionPlayEpoch != null) {
+      if (state.trainPhase === 'induction' && state.lastInductionPlayEpoch != null) {
         var secSinceCue = state.secondsRecorded - state.lastInductionPlayEpoch;
         if (secSinceCue > 0 && secSinceCue <= AROUSAL_POST_CUE_WINDOW_SEC) {
           state.lastInductionCuePostRawValues.push(motionForSecond);
@@ -2501,10 +2509,6 @@ function playFixedBeep75(durationMs, onEnded) {
         }
       }
     } else {
-      if (state.fakeRemTestActive) {
-        render();
-        return;
-      }
       // Before 4h gate or before the rolling window is available: no REM / trains from this logic.
       state.consecutive_seconds_above_threshold = 0;
       state.inRemEpisode = false;
@@ -2569,8 +2573,7 @@ function playFixedBeep75(durationMs, onEnded) {
       state.finalSleepVolume = baseline;
       state.baselineSliderVolume = baseline;
       saveBaselineVolume(state.pid, baseline);
-      state.appStep = 4;
-      render();
+      startRecordingMotion('training');
     }
     requestMotionPermission().then(function(result) {
       if (result === 'granted') enableNoSleep();
@@ -2719,7 +2722,7 @@ function playFixedBeep75(durationMs, onEnded) {
   }
 
   // Starts recording motion.
-  function startRecordingMotion() {
+  function startRecordingMotion(targetStep) {
     // Condition/night should be assigned once during participant setup, not again here.
     if (state.pid && state.tonight_condition == null) ensureConditionForTonight(state.pid);
     // Prime native audio, vibration on this user gesture before timer-fired cues
@@ -2727,7 +2730,11 @@ function playFixedBeep75(durationMs, onEnded) {
     primeVibrationForSleep();
     primeLightForSleep();
     enableNoSleep();
-    state.appStep = 5;
+    state.trainingComplete = false;
+    state.trainingActive = false;
+    state.trainingSkipped = false;
+    state.trainingRemainingSec = Math.floor(TRAINING_DURATION_MS / 1000);
+    state.appStep = targetStep || 5;
     state.motionThisSecond = 0;
     state.motionSamplesForBackend = [];
     state.secondsRecorded = 0;
@@ -2761,14 +2768,6 @@ function playFixedBeep75(durationMs, onEnded) {
     state.inductionVolume = getInductionStartVolume();
     state.inductionCap = 1;
     state.nextTrainInductionCap = null;
-    state.fakeRemTestActive = false;
-    if (state.fakeRemTestTimeoutId) {
-      clearTimeout(state.fakeRemTestTimeoutId);
-      state.fakeRemTestTimeoutId = null;
-    }
-    state.fakeTestSequenceActive = false;
-    state.fakeTestConditionIndex = 0;
-    state.fakeTestConditions = [6, 7];
     var savedThreshold = loadArousalThreshold();
     state.arousal_threshold = savedThreshold;
 
@@ -2807,7 +2806,7 @@ function playFixedBeep75(durationMs, onEnded) {
     state.sleepStartTime = Date.now();
     if (state.timerInterval) clearInterval(state.timerInterval);
     state.timerInterval = setInterval(function() {
-      if (state.appStep !== 5) return;
+      if (state.appStep !== 5 && state.appStep !== 'training') return;
       render();
     }, 1000);
     if (state.localBackupTimerId) {
@@ -2816,11 +2815,9 @@ function playFixedBeep75(durationMs, onEnded) {
     }
     saveLocalSessionBackup('sleep_start');
     state.localBackupTimerId = setInterval(function() {
-      if (state.appStep !== 5) return;
+      if (state.appStep !== 5 && state.appStep !== 'training') return;
       saveLocalSessionBackup('minute_checkpoint');
     }, LOCAL_SESSION_BACKUP_INTERVAL_MS);
-    setupTemporaryFakeRemForTesting();
-
     render();
   }
 
@@ -3934,12 +3931,6 @@ function playFixedBeep75(durationMs, onEnded) {
     state.timerInterval = null;
     if (state.localBackupTimerId) clearInterval(state.localBackupTimerId);
     state.localBackupTimerId = null;
-    state.fakeRemTestActive = false;
-    if (state.fakeRemTestTimeoutId) {
-      clearTimeout(state.fakeRemTestTimeoutId);
-      state.fakeRemTestTimeoutId = null;
-    }
-    state.fakeTestSequenceActive = false;
     if (nextTrainTimeoutId) { clearTimeout(nextTrainTimeoutId); nextTrainTimeoutId = null; }
     clearDisruptiveTimeouts();
     cancelScheduledCue();
@@ -3948,6 +3939,7 @@ function playFixedBeep75(durationMs, onEnded) {
     sendSleepData('wake_final');
     state.appStep = 0;
     state._voiceCheckDone = false;
+    state.trainingSkipped = false;
     state.epochs = 0;
     state.totalStimCount = 0;
     state.observedSystemVolume = null;
@@ -3964,8 +3956,9 @@ function playFixedBeep75(durationMs, onEnded) {
     state.baselineSetObservedSystemVolume = null;
     state.beepDurationMs = DEFAULT_BEEP_DURATION_MS;
     state.intervalSeconds = 10;
+    state.trainingSkipped = false;
     ensureConditionForTonight(pid);
-    state.appStep = 1;
+    state.appStep = 'study';
     render();
     setTimeout(checkNativeApisOnLogin, 800);
     recoverBackupToPendingIfNeeded(pid).then(function() {
@@ -4003,6 +3996,7 @@ function playFixedBeep75(durationMs, onEnded) {
     if (!container) return;
     if (container.classList && container.classList.toggle) {
       container.classList.toggle('training-layout', state.appStep === 'training');
+      container.classList.toggle('study-layout', state.appStep === 'study');
     }
 
     // Handles el.
@@ -4056,6 +4050,30 @@ function playFixedBeep75(durationMs, onEnded) {
         container.appendChild(btn);
         break;
       }
+      case 'study': {
+        container.appendChild(el('p', { className: 'text-title' }, ['Study description']));
+        var panel = el('div', { className: 'study-panel' }, []);
+        panel.appendChild(el('p', { className: 'study-lead' }, [
+          'A lucid dream is a dream is a dream in which you know that you are dreaming. This study looks at whether sounds, lights, or gentle vibrations from your phone can help you have these lucid dreams more often.'
+        ]));
+        panel.appendChild(el('p', { className: 'study-section-title', style: { marginTop: '12px' } }, ['Instructions']));
+        panel.appendChild(el('p', { className: 'study-section-body' }, [
+          'Before sleep: You will spend 15 minutes listening to the same signals that the app will play later while you sleep.'
+        ]));
+        panel.appendChild(el('p', { className: 'study-section-title' }, ['The goal']));
+        panel.appendChild(el('p', { className: 'study-section-body' }, [
+          'During this time, the app will guide you through a mental exercise. You will learn how to associate those signals with a "lucid mindset"—learning to think clearly about what you are experiencing in the moment. You can allow yourself to fall asleep while the training is playing.'
+        ]));
+        panel.appendChild(el('p', { className: 'study-section-title' }, ['Waking up']));
+        panel.appendChild(el('p', { className: 'study-section-body' }, [
+          'As soon as you wake up, just tap the "I’m awake" button on the app.'
+        ]));
+        container.appendChild(panel);
+        container.appendChild(el('div', { className: 'study-cta-wrap' }, [
+          el('button', { className: 'btn', onClick: function() { state.appStep = 1; render(); } }, ['Continue'])
+        ]));
+        break;
+      }
       case 1: {
         if (!state._voiceCheckDone) {
           state._voiceCheckDone = true;
@@ -4063,10 +4081,10 @@ function playFixedBeep75(durationMs, onEnded) {
         }
         container.appendChild(el('p', { className: 'text-title' }, ['Record your cue']));
         container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line', textAlign: 'left' } }, [
-          'Record a short sentence (2–4 seconds), for example: "I am dreaming."\n\nTap Record, then speak clearly. Stop when done.'
+          'Record a short sentence (2–4 seconds): "I am dreaming."\n\nTap Record, then speak clearly. Stop when done.'
         ]));
         if (state.hasVoiceRecording) {
-          container.appendChild(el('button', { className: 'btn', onClick: function() { state.appStep = 'training'; state._voiceCheckDone = false; state.trainingComplete = false; render(); } }, ['Use existing recording']));
+          container.appendChild(el('button', { className: 'btn', onClick: function() { state.appStep = 2; state._voiceCheckDone = false; state.trainingComplete = false; render(); } }, ['Continue']));
           container.appendChild(el('div', { style: { height: '8px' } }));
           container.appendChild(el('button', { className: 'btn', onClick: function() { state._recordingAgain = true; state.hasVoiceRecording = false; state._voiceCheckDone = true; render(); } }, ['Record again (replaces previous)']));
         } else {
@@ -4166,7 +4184,7 @@ function playFixedBeep75(durationMs, onEnded) {
       }
       case 'training': {
         startTrainingPhaseIfNeeded();
-        container.appendChild(el('p', { className: 'text-title' }, ['Praticing Lucidity']));
+        container.appendChild(el('p', { className: 'text-title' }, ['Practicing Lucidity']));
         container.appendChild(el('p', { className: 'text-body', style: { marginBottom: '8px' } }, [
           'Listen to the cues and practice recognizing the lucid reminder.'
         ]));
@@ -4188,21 +4206,25 @@ function playFixedBeep75(durationMs, onEnded) {
         container.appendChild(el('p', { className: 'text-body', style: { color: 'var(--text-muted)', fontSize: '0.9rem' } }, [
           'Time remaining: ' + String(min) + ':' + sec
         ]));
-        container.appendChild(el('div', { style: { height: '6px' } }));
-        container.appendChild(el('button', { className: 'btn btn-red', onClick: skipTrainingPhase }, ['Skip training']));
+        if (SHOW_SKIP_TRAINING) {
+          container.appendChild(el('div', { style: { height: '6px' } }));
+          container.appendChild(el('button', { className: 'btn btn-red', onClick: skipTrainingPhase }, ['Skip training']));
+        }
         break;
       }
       case 2: {
         var needsMotionActivation = !getMotionGranted(state.pid);
         container.appendChild(el('p', { className: 'icon-lg' }, ['🔐']));
         container.appendChild(el('p', { className: 'text-title', style: { color: 'var(--orange-accent)', fontWeight: 'bold' } }, ['IMPORTANT: Your screen must stay ON.']));
-        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n1. Do NOT lock your phone.\n2. Do NOT close this browser tab.\n3. Set the volume to 50% (with the physical buttons or the Control Center slider).']));
+        container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n2. Do NOT lock your phone.\n3. Do NOT close this browser tab.']));
+        container.appendChild(el('p', { className: 'text-body', style: { color: '#d32f2f', fontWeight: '700', marginTop: '8px' } }, ['Set the volume to 50% (with the physical buttons or the Control Center slider).']));
+        container.appendChild(el('p', { className: 'text-body', style: { color: 'var(--orange-accent)', marginTop: '8px' } }, ['Keep the phone connected to a charging cable and enable Do Not Disturb mode.']));
         container.appendChild(el('div', { className: 'divider' }));
         if (needsMotionActivation) {
           container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));
         }
         container.appendChild(el('div', { style: { height: '40px' } }));
-        container.appendChild(el('button', { className: 'btn', onClick: handleStartSequence }, [needsMotionActivation ? 'Allow motion sensor' : 'Continue']));
+        container.appendChild(el('button', { className: 'btn btn-green', onClick: handleStartSequence }, ['Start night']));
         break;
       }
       case 4: {
@@ -4231,13 +4253,6 @@ function playFixedBeep75(durationMs, onEnded) {
           container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '2px' } }, [
             'Induction volume: ' + String(inductionPct) + '%'
           ]));
-        }
-        if (ENABLE_FAKE_REM_TEST) {
-          var remToFake = Math.max(0, FAKE_REM_TRIGGER_AFTER_SEC - (state.secondsRecorded || 0));
-          var fakeMsg = state.fakeRemTestActive
-            ? 'TEMP TEST REM status: started'
-            : ('TEMP TEST REM starts in: ' + String(remToFake) + 's');
-          container.appendChild(el('p', { className: 'text-body', style: { fontSize: '0.9rem', color: 'var(--orange-accent)', marginTop: '4px' } }, [fakeMsg]));
         }
         var elapsedSec = state.secondsRecorded || 0;
         var elapsedStr = Math.floor(elapsedSec / 3600) + ':' + String(Math.floor((elapsedSec % 3600) / 60)).padStart(2, '0') + ':' + String(elapsedSec % 60).padStart(2, '0');
