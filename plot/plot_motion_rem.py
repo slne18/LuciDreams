@@ -26,10 +26,9 @@ DEFAULT_REM_CSV = os.path.join(DATA_NIGHT_DIR, "rem_episodes.csv")
 DEFAULT_CUE_CSV = os.path.join(DATA_NIGHT_DIR, "cue_events.csv")
 MOTION_PLOTS_DIR = os.path.join(BASE_DIR, "motion_plots")
 FOUR_HOURS_SECONDS = 4 * 60 * 60
-# For export_data.py output, smoothed second_index is already absolute from session start.
-# Keep default offset at 0. Use --smooth-index-offset-sec 299 only for legacy CSVs
-# where second_index starts at first valid 5-minute smoothed sample.
-DEFAULT_SMOOTH_INDEX_OFFSET_SEC = 0
+# For smoothed series indexed from first valid 5-minute sample,
+# absolute_second = csv_second_index + 299.
+DEFAULT_SMOOTH_INDEX_OFFSET_SEC = 299
 
 
 def read_csv(path: str) -> List[Dict[str, str]]:
@@ -113,7 +112,7 @@ def main() -> None:
         "--smooth-index-offset-sec",
         type=int,
         default=DEFAULT_SMOOTH_INDEX_OFFSET_SEC,
-        help="Offset applied to second_index when plotting smoothed CSV (default: 0 for export_data.py output). Use 299 for legacy 5-minute-window indexed CSVs.",
+        help="Offset applied to second_index when plotting smoothed CSV (default: 299 for 5-minute-window indexed CSVs). Use 0 if second_index is already absolute.",
     )
     parser.add_argument("--session-start-boston", default=None, help="HH:MM:SS")
     parser.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both")

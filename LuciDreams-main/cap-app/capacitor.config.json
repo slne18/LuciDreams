@@ -5,5 +5,13 @@
   "server": {},
   "ios": {
     "contentInset": "automatic"
-  }
+  },
+  "packageClassList": [
+    "NativeAudio",
+    "VolumeButtonsPlugin",
+    "FilesystemPlugin",
+    "HapticsPlugin",
+    "TorchPlugin",
+    "SystemVolumePlugin"
+  ]
 }

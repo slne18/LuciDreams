@@ -381,7 +381,9 @@
   window.luciNativeBeepVariantsPromise = null;
   window.luciNativeBeepVariantVolumes = (function() {
     var levels = [];
-    for (var i = 0; i <= 100; i++) levels.push(i / 100);
+    // 0 -> 10% by 0.5%, then 15 -> 100% by 5%.
+    for (var i = 0; i <= 20; i++) levels.push(i / 200);
+    for (var j = 15; j <= 100; j += 5) levels.push(j / 100);
     return levels;
   })();
   window.luciNativeAudioPreloadPromise = null;
@@ -425,10 +427,26 @@
     }
     return levels[0];
   }
+  // Returns beep variant suffix (e.g. "0", "0_5", "1", ... "100") from volume [0..1].
+  function getBeepVariantSuffixFromVolume(vol) {
+    var stepped = getClosestBeepVariantVolume(vol);
+    var pct = Math.round(stepped * 1000) / 10; // keep one decimal in percent
+    var whole = Math.floor(pct + 1e-9);
+    var frac = pct - whole;
+    if (Math.abs(frac) < 1e-6) return String(whole);
+    // We only use .5 steps in low range.
+    return String(whole) + '_5';
+  }
+
+  // Parses suffix back to percent numeric (e.g. "0_5" -> 0.5, "12" -> 12).
+  function parseBeepVariantSuffixPercent(s) {
+    if (s == null) return NaN;
+    return parseFloat(String(s).replace('_', '.'));
+  }
+
   // Returns beep variant asset id.
   function getBeepVariantAssetId(vol) {
-    var stepped = getClosestBeepVariantVolume(vol);
-    return 'beep_v' + String(Math.round(stepped * 100));
+    return 'beep_v' + getBeepVariantSuffixFromVolume(vol);
   }
   // Stops native beep variants.
   function stopNativeBeepVariants(NA) {
@@ -712,11 +730,14 @@
   const REM_STILLNESS_PERCENT_OF_SERIES_MEAN = 0.8; // Stillness percentile against the evolving current smoothed-motion series
   const REM_ENTRY_HOLD_SEC = 120; // Keep REM stable for 2 min before first train
   // REM Episode Manager
-  const NIGHT_MAX_TRAINS = 10;
-  const REM_EPISODE_MAX_TRAINS = 5;           // Per-REM-episode cap 
+  const NIGHT_MAX_TRAINS = 5;
+  const REM_EPISODE_MAX_TRAINS = 3;           // Per-REM-episode cap 
   const REFRACTORY_PERIOD_SEC = 300;          // 5 min between trains
   const AROUSAL_CHECK_WINDOW_SEC = 5;          // Movement within 5s after induction cue (raw motion; for arousal only)
   const MOVEMENT_DURATION_FOR_AROUSAL = 2;    // Require 2s movement for arousal (kept: responsive to cue reaction)
+  const AROUSAL_POST_CUE_WINDOW_SEC = 1;      // Compare raw motion in the 1s after cue vs REM baseline percentile
+  const INDUCTION_AROUSAL_RAW_PERCENTILE = 0.90;
+  const DISRUPTIVE_AROUSAL_RAW_PERCENTILE = 0.90;
   const USER_MIN_VOLUME_CEILING_DELTA = 0.20;
   const CALIBRATION_VOLUME_STEP = 1 / 16; // iOS hardware volume increments are typically 16 steps
   // --- TEMP TEST HARNESS (delete this block when done) ---
@@ -738,19 +759,21 @@
   const DISRUPTIVE_VIBRATION_MS = 500;       // per burst
   const DISRUPTIVE_VIBRATION_GAP_MS = 1000;   // gap between bursts
   const LD_INDUCTION_START_VOLUME = 0;         // induction starts at 0%
-  // Full induction sequence maps to beep_v0 ... beep_v100.
+  // Full induction sequence:
+  // - 0 -> 10% with 0.5% steps
+  // - 15 -> 100% with 5% steps
   const INDUCTION_VOLUME_LEVELS = (function() {
     var levels = [];
-    for (var i = 0; i <= 100; i++) levels.push(i / 100);
+    for (var i = 0; i <= 20; i++) levels.push(i / 200);
+    for (var j = 15; j <= 100; j += 5) levels.push(j / 100);
     return levels;
   })();
   const LD_BEEP_DURATION_MS = 200;
   // App-wide cue
   const DEFAULT_BEEP_DURATION_MS = 150;
-  // 8-night rotating conditions:
-  // 0=Control, 1=Sound+Bip, 2=Vibration+Bip, 3=Light+Bip, 4=Voice, 5=Beep,
-  // 6=Theta(8Hz)+Bip, 7=Gamma(30Hz)+Bip
-  const CONDITION_POOL = [0, 1, 2, 3, 4, 5, 6, 7];
+  // TEST MODE: restrict nightly conditions to 4 or 5 only.
+  // 4=Voice, 5=Beep
+  const CONDITION_POOL = [4, 5];
   const TRAINING_DURATION_MS = 10 * 60 * 1000;
   const TRAINING_CUE_INTERVAL_MS = 1000;
   const TRAINING_INTRO_DELAY_MS = 2000;
@@ -810,6 +833,7 @@
     inRemEpisode: false,
     remEpisodeStartSeconds: 0,
     remEpisodeStartTime: null,
+    remEpisodeRawMotionValues: [],
     currentRemEpisodeEntryThreshold: null,
     lastCueEpoch: 0,
     oldX: 0, oldY: 0, oldZ: 0,
@@ -829,6 +853,8 @@
     baselineSliderVolume: 0.1,
     observedSystemVolume: null,
     baselineSetObservedSystemVolume: null,
+    volumeWatchPollId: null,
+    volumeListenerHandle: null,
     tonight_condition: null,
     hasVoiceRecording: false,
     // Arousal threshold (sound 0-1) from LD induction, persisted across nights
@@ -841,6 +867,11 @@
     inductionCap: 1,           // induction climbs until arousal or 100%
     nextTrainInductionCap: null, // one-shot cap for next train after arousal (95% of threshold)
     lastInductionPlayEpoch: null,
+    lastInductionCueBaselineRawAvg: null,
+    lastInductionCuePostRawValues: [],
+    lastDisruptiveCueEpoch: null,
+    lastDisruptiveCueBaselineRawQ: null,
+    lastDisruptiveCuePostRawValues: [],
     currentEpisodeTrains: [],  // { disruptive: {}, induction: { cues: [], arousal_threshold } }
     disruptiveRampActive: false,
     disruptiveRampFoundVolume: null,
@@ -882,6 +913,13 @@
 
   // Returns condition state key.
   function getConditionStateKey(pid) { return 'luci_condition_state_' + (pid || 'default'); }
+  function getLocalDayKey(d) {
+    var dt = d || new Date();
+    var y = dt.getFullYear();
+    var m = String(dt.getMonth() + 1).padStart(2, '0');
+    var day = String(dt.getDate()).padStart(2, '0');
+    return String(y) + '-' + m + '-' + day;
+  }
   // Ensures condition for tonight.
   function ensureConditionForTonight(pid) {
     var key = getConditionStateKey(pid);
@@ -902,9 +940,21 @@
       }
       return false;
     }
+    var todayKey = getLocalDayKey();
     var tonight;
     if (poolIsOutdated(cs)) {
-      cs = { current_cycle_pool: CONDITION_POOL.slice(), spent_conditions: [] };
+      cs = { current_cycle_pool: CONDITION_POOL.slice(), spent_conditions: [], night_number: 0, last_assigned_day: null, last_condition: null };
+    }
+    if (typeof cs.night_number !== 'number' || !isFinite(cs.night_number) || cs.night_number < 0) {
+      cs.night_number = (Array.isArray(cs.spent_conditions) ? cs.spent_conditions.length : 0);
+    }
+    // Same calendar day => keep same "night" metadata (condition + night number).
+    if (cs.last_assigned_day === todayKey &&
+        cs.last_condition != null &&
+        CONDITION_POOL.indexOf(cs.last_condition) !== -1) {
+      state.tonight_condition = cs.last_condition;
+      try { localStorage.setItem(key, JSON.stringify(cs)); } catch (e) {}
+      return;
     }
     if (!cs.current_cycle_pool || cs.current_cycle_pool.length === 0) {
       cs.current_cycle_pool = CONDITION_POOL.slice();
@@ -914,6 +964,9 @@
     tonight = cs.current_cycle_pool[pickIdx];
     cs.current_cycle_pool.splice(pickIdx, 1);
     cs.spent_conditions.push(tonight);
+    cs.last_condition = tonight;
+    cs.last_assigned_day = todayKey;
+    cs.night_number = (cs.night_number || 0) + 1;
     try { localStorage.setItem(key, JSON.stringify(cs)); } catch (e) {}
     state.tonight_condition = tonight;
   }
@@ -1087,6 +1140,11 @@
     state.trainStartEpoch = state.secondsRecorded;
     state.trainPhase = 'disruptive';
     state.lastInductionPlayEpoch = null;
+    state.lastInductionCueBaselineRawAvg = null;
+    state.lastInductionCuePostRawValues = [];
+    state.lastDisruptiveCueEpoch = null;
+    state.lastDisruptiveCueBaselineRawQ = null;
+    state.lastDisruptiveCuePostRawValues = [];
     var c = state.tonight_condition;
     var trainRecord = {
       disruptive: {
@@ -1118,6 +1176,9 @@
       // Otherwise cap remains full range (1.0).
       state.inductionCap = consumeNextInductionCap();
       state.lastInductionPlayEpoch = null;
+      state.lastDisruptiveCueEpoch = null;
+      state.lastDisruptiveCueBaselineRawQ = null;
+      state.lastDisruptiveCuePostRawValues = [];
       if (c === 0) {
         endTrain(false);
         return;
@@ -1147,6 +1208,9 @@
             if (!state.inRemEpisode || state.trainPhase !== 'disruptive' || !state.disruptiveRampActive) return;
             state.disruptiveRampCandidateVolume = vol;
             state.disruptiveRampLastCueEpoch = state.secondsRecorded;
+            state.lastDisruptiveCueEpoch = state.secondsRecorded;
+            state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
+            state.lastDisruptiveCuePostRawValues = [];
             state.soundRunning = true;
             playBeep(vol, DISRUPTIVE_SOUND_DURATION_MS, function() { state.soundRunning = false; render(); });
           }, startMs));
@@ -1161,6 +1225,9 @@
         state.disruptiveRampActive = false;
         state.disruptiveRampCandidateVolume = secondVol;
         state.disruptiveRampLastCueEpoch = state.secondsRecorded;
+        state.lastDisruptiveCueEpoch = state.secondsRecorded;
+        state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
+        state.lastDisruptiveCuePostRawValues = [];
         state.soundRunning = true;
         playBeep(secondVol, DISRUPTIVE_SOUND_DURATION_MS, function() { state.soundRunning = false; render(); });
       }, DISRUPTIVE_SECOND_CUE_OFFSET_MS));
@@ -1199,6 +1266,9 @@
       }, DISRUPTIVE_LIGHT_OFFSET_MS));
     } else if (c === 6) {
       // Theta (8Hz): ramp from 0 by +1% every 5s. After disruptive arousal, hold at 95% of that volume.
+      state.lastDisruptiveCueEpoch = state.secondsRecorded;
+      state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
+      state.lastDisruptiveCuePostRawValues = [];
       state.disruptiveWaveRampActive = true;
       state.disruptiveWaveCurrentVolume = 0;
       state.disruptiveWaveArousalVolume = null;
@@ -1230,6 +1300,9 @@
       }
     } else if (c === 7) {
       // Gamma (30Hz): ramp from 0 by +1% every 5s. After disruptive arousal, hold at 95% of that volume.
+      state.lastDisruptiveCueEpoch = state.secondsRecorded;
+      state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
+      state.lastDisruptiveCuePostRawValues = [];
       state.disruptiveWaveRampActive = true;
       state.disruptiveWaveCurrentVolume = 0;
       state.disruptiveWaveArousalVolume = null;
@@ -1273,6 +1346,9 @@
     state.trainPhase = null;
     state.trainStartEpoch = null;
     state.lastInductionPlayEpoch = null;
+    state.lastDisruptiveCueEpoch = null;
+    state.lastDisruptiveCueBaselineRawQ = null;
+    state.lastDisruptiveCuePostRawValues = [];
     state.disruptiveRampActive = false;
     state.disruptiveRampFoundVolume = null;
     state.disruptiveRampCandidateVolume = 0;
@@ -1399,12 +1475,11 @@
     fr.onerror = function() { playOwnVoiceViaHtmlAudio(blob, volume, done); };
     fr.readAsDataURL(blob);
   }
-  // Returns voice step from volume.
+  // Returns stepped voice volume from target volume.
   function getVoiceStepFromVolume(vol) {
     var target = Math.max(0, Math.min(1, vol || 0));
     // Keep voice at or below target (same safety rule as induction cap).
-    var stepped = getRoundedDownBeepVariantVolume(target);
-    return Math.round(stepped * 100);
+    return getRoundedDownBeepVariantVolume(target);
   }
   // Ensures voice variant blobs.
   function ensureVoiceVariantBlobs(pid, sourceBlob, cb) {
@@ -1460,8 +1535,9 @@
         }
         var variants = {};
         (INDUCTION_VOLUME_LEVELS || []).forEach(function(level) {
-          var step = Math.round((level || 0) * 100);
-          if (step >= 0 && step <= 100) variants[step] = encodeWavWithGain(step / 100);
+          var lv = Math.max(0, Math.min(1, level || 0));
+          var stepKey = getBeepVariantSuffixFromVolume(lv);
+          if (stepKey) variants[stepKey] = encodeWavWithGain(lv);
         });
         state.voiceVariantCachePid = pid;
         state.voiceVariantBlobs = variants;
@@ -1478,20 +1554,25 @@
     getVoiceBlob(state.pid, function(blob) {
       if (!blob) { if (typeof onEnded === 'function') onEnded(); return; }
       ensureVoiceVariantBlobs(state.pid, blob, function(variants) {
-        var stepInt = Math.max(0, Math.min(100, parseInt(step, 10) || 0));
-        if (variants && !variants[stepInt]) {
-          var keys = Object.keys(variants).map(function(k) { return parseInt(k, 10); }).filter(function(n) { return !isNaN(n); });
+        var rawStep = (typeof step === 'number') ? step : (parseFloat(step) || 0);
+        // Backward compatibility: callers may still pass percent (e.g. 75 for 75%).
+        var normalizedStep = rawStep > 1 ? (rawStep / 100) : rawStep;
+        var targetVol = Math.max(0, Math.min(1, normalizedStep));
+        var stepKey = getBeepVariantSuffixFromVolume(targetVol);
+        if (variants && !variants[stepKey]) {
+          var keys = Object.keys(variants).map(function(k) { return String(k); });
           if (keys.length) {
+            var targetPct = targetVol * 100;
             var best = keys[0];
-            var bestDist = Math.abs(stepInt - best);
+            var bestDist = Math.abs(parseBeepVariantSuffixPercent(best) - targetPct);
             for (var i = 1; i < keys.length; i++) {
-              var d = Math.abs(stepInt - keys[i]);
+              var d = Math.abs(parseBeepVariantSuffixPercent(keys[i]) - targetPct);
               if (d < bestDist) { best = keys[i]; bestDist = d; }
             }
-            stepInt = best;
+            stepKey = best;
           }
         }
-        var chosen = (variants && variants[stepInt]) ? variants[stepInt] : blob;
+        var chosen = (variants && variants[stepKey]) ? variants[stepKey] : blob;
         var hasNative = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeAudio && window.Capacitor.Plugins.Filesystem;
         if (hasNative) {
           playOwnVoiceViaNative(chosen, 1, onEnded);
@@ -1517,10 +1598,17 @@
     };
     train.induction.cues.push(cueRecord);
     state.lastInductionPlayEpoch = state.secondsRecorded;
+    // Baseline for arousal check: percentile of raw motion accumulated so far in current REM.
+    if (state.remEpisodeRawMotionValues && state.remEpisodeRawMotionValues.length > 0) {
+      state.lastInductionCueBaselineRawAvg = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, INDUCTION_AROUSAL_RAW_PERCENTILE);
+    } else {
+      state.lastInductionCueBaselineRawAvg = null;
+    }
+    state.lastInductionCuePostRawValues = [];
     state.soundRunning = true;
     if (c === 4) {
       var step = getVoiceStepFromVolume(vol);
-      if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'own_voice', type: 'T2', level: vol, info: 'custom recording step ' + String(step) });
+      if (state.currentEpisodeSoundEvents) state.currentEpisodeSoundEvents.push({ category: 'own_voice', type: 'T2', level: vol, info: 'custom recording step ' + String(getBeepVariantSuffixFromVolume(step)) });
       playOwnVoiceAtStep(step, function() { state.soundRunning = false; render(); });
     } else if (c === 5) {
       playBeep(vol, LD_BEEP_DURATION_MS, function() { state.soundRunning = false; render(); });
@@ -1792,6 +1880,7 @@
   function skipTrainingPhase() {
     finishTrainingPhase();
   }
+
   // Handles restart training from beginning.
   function restartTrainingFromBeginning() {
     if (!state.trainingActive) return;
@@ -2140,12 +2229,24 @@ function playFixedBeep75(durationMs, onEnded) {
     getVoiceBlob(pid, function(blob) { cb(!!blob); });
   }
 
+  var luciSnackbarTimeoutId = null;
   // Shows snackbar.
-  function showSnackbar(msg) {
+  function showSnackbar(msg, durationMs) {
     const el = document.getElementById('snackbar');
     el.textContent = msg;
     el.classList.remove('hidden');
-    setTimeout(function() { el.classList.add('hidden'); }, 3000);
+    if (luciSnackbarTimeoutId) clearTimeout(luciSnackbarTimeoutId);
+    luciSnackbarTimeoutId = setTimeout(function() {
+      el.classList.add('hidden');
+      luciSnackbarTimeoutId = null;
+    }, durationMs || 3000);
+  }
+
+  // Validates participant ID format: digit9digit2digit3digit6.
+  function validateParticipantId(pid) {
+    var normalized = String(pid || '').trim();
+    var regex = /^\d9\d2\d3\d6$/;
+    return regex.test(normalized);
   }
 
   /** Require native APIs; show error and return false if not available. */
@@ -2237,6 +2338,9 @@ function playFixedBeep75(durationMs, onEnded) {
       if (state.fakeRemTestActive) isStillSmoothed = true;
       var rawAboveCount = rawSeriesAll.reduce(function(count, v) { return count + (motionForSecond > v ? 1 : 0); }, 0);
       var isRawAbove80PercentOfSeries = rawSeriesAll.length > 0 && (rawAboveCount / rawSeriesAll.length) >= REM_STILLNESS_PERCENT_OF_SERIES_MEAN;
+      if (state.inRemEpisode) {
+        state.remEpisodeRawMotionValues.push(motionForSecond);
+      }
 
       // Finalizes current rem episode.
       function finalizeCurrentRemEpisode() {
@@ -2265,6 +2369,12 @@ function playFixedBeep75(durationMs, onEnded) {
         state.trainStartEpoch = null;
         state.nextTrainInductionCap = null;
         state.lastInductionPlayEpoch = null;
+        state.lastInductionCueBaselineRawAvg = null;
+        state.lastInductionCuePostRawValues = [];
+        state.lastDisruptiveCueEpoch = null;
+        state.lastDisruptiveCueBaselineRawQ = null;
+        state.lastDisruptiveCuePostRawValues = [];
+        state.remEpisodeRawMotionValues = [];
         state.disruptiveRampActive = false;
         state.disruptiveRampFoundVolume = null;
         state.disruptiveRampCandidateVolume = 0;
@@ -2280,54 +2390,67 @@ function playFixedBeep75(durationMs, onEnded) {
         cancelScheduledCue();
       }
 
-      if (isRawAbove80PercentOfSeries) {
-        state.consecutive_seconds_above_threshold++;
-        if (state.trainPhase === 'disruptive' && state.tonight_condition === 1 && state.disruptiveRampActive) {
-          var inDisruptiveWindow = state.disruptiveRampLastCueEpoch != null && (state.secondsRecorded - state.disruptiveRampLastCueEpoch) < AROUSAL_CHECK_WINDOW_SEC;
-          if (inDisruptiveWindow) {
-            state.disruptiveRampConsecutiveAbove++;
-            if (state.disruptiveRampConsecutiveAbove >= MOVEMENT_DURATION_FOR_AROUSAL && state.disruptiveRampFoundVolume == null) {
+      if (isRawAbove80PercentOfSeries) state.consecutive_seconds_above_threshold++;
+      else state.consecutive_seconds_above_threshold = 0;
+
+      // Arousal check in disruptive phase:
+      // if post-cue raw metric (single value when window=1s, otherwise mean) > REM-local raw percentile baseline.
+      if (!state.fakeRemTestActive && state.trainPhase === 'disruptive' && state.lastDisruptiveCueEpoch != null) {
+        var secSinceDisruptiveCue = state.secondsRecorded - state.lastDisruptiveCueEpoch;
+        if (secSinceDisruptiveCue > 0 && secSinceDisruptiveCue <= AROUSAL_POST_CUE_WINDOW_SEC) {
+          state.lastDisruptiveCuePostRawValues.push(motionForSecond);
+        }
+        if (secSinceDisruptiveCue === AROUSAL_POST_CUE_WINDOW_SEC && state.lastDisruptiveCueBaselineRawQ != null && state.lastDisruptiveCuePostRawValues.length >= AROUSAL_POST_CUE_WINDOW_SEC) {
+          var disruptivePostMetric = state.lastDisruptiveCuePostRawValues.reduce(function(a, b) { return a + b; }, 0) / state.lastDisruptiveCuePostRawValues.length;
+          if (disruptivePostMetric > state.lastDisruptiveCueBaselineRawQ) {
+            if (state.tonight_condition === 1 && state.disruptiveRampActive && state.disruptiveRampFoundVolume == null) {
               state.disruptiveRampFoundVolume = state.disruptiveRampCandidateVolume;
               state.disruptiveRampActive = false;
               stopCurrentBeepPlaybackNow();
               state.soundRunning = false;
-              console.log('Disruptive ramp arousal volume set:', state.disruptiveRampFoundVolume);
+              console.log('Disruptive ramp arousal volume set (post-cue raw > REM raw q90):', state.disruptiveRampFoundVolume, 'postCueMetric=', disruptivePostMetric, 'baselineQ=', state.lastDisruptiveCueBaselineRawQ);
+            }
+            if ((state.tonight_condition === 6 || state.tonight_condition === 7) && state.disruptiveWaveArousalVolume == null) {
+              state.disruptiveWaveArousalVolume = state.disruptiveWaveCurrentVolume;
+              state.disruptiveWaveTargetVolume = Math.max(0, Math.min(1, state.disruptiveWaveCurrentVolume * 0.95));
+              state.disruptiveWaveCurrentVolume = state.disruptiveWaveTargetVolume;
+              setDisruptiveWaveVolume(state.disruptiveWaveTargetVolume);
+              state.disruptiveWaveRampActive = false;
+              var trainW = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
+              if (trainW && trainW.disruptive && trainW.disruptive.params) {
+                trainW.disruptive.params.found_arousal_volume = state.disruptiveWaveArousalVolume;
+                trainW.disruptive.params.post_arousal_target_volume = state.disruptiveWaveTargetVolume;
+              }
+              console.log('Disruptive wave arousal volume set (post-cue raw > REM raw q90):', state.disruptiveWaveArousalVolume, 'target=', state.disruptiveWaveTargetVolume, 'postCueMetric=', disruptivePostMetric, 'baselineQ=', state.lastDisruptiveCueBaselineRawQ);
             }
           }
         }
-        if (!state.fakeRemTestActive && state.trainPhase === 'disruptive' && (state.tonight_condition === 6 || state.tonight_condition === 7) && state.disruptiveWaveArousalVolume == null) {
-          if (state.consecutive_seconds_above_threshold >= MOVEMENT_DURATION_FOR_AROUSAL) {
-            state.disruptiveWaveArousalVolume = state.disruptiveWaveCurrentVolume;
-            state.disruptiveWaveTargetVolume = Math.max(0, Math.min(1, state.disruptiveWaveCurrentVolume * 0.95));
-            state.disruptiveWaveCurrentVolume = state.disruptiveWaveTargetVolume;
-            setDisruptiveWaveVolume(state.disruptiveWaveTargetVolume);
-            state.disruptiveWaveRampActive = false;
-            var trainW = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
-            if (trainW && trainW.disruptive && trainW.disruptive.params) {
-              trainW.disruptive.params.found_arousal_volume = state.disruptiveWaveArousalVolume;
-              trainW.disruptive.params.post_arousal_target_volume = state.disruptiveWaveTargetVolume;
+      }
+
+      // Arousal check in induction phase:
+      // if post-cue raw metric (single value when window=1s, otherwise mean) > REM-local raw percentile baseline.
+      if (!state.fakeRemTestActive && state.trainPhase === 'induction' && state.lastInductionPlayEpoch != null) {
+        var secSinceCue = state.secondsRecorded - state.lastInductionPlayEpoch;
+        if (secSinceCue > 0 && secSinceCue <= AROUSAL_POST_CUE_WINDOW_SEC) {
+          state.lastInductionCuePostRawValues.push(motionForSecond);
+        }
+        if (secSinceCue === AROUSAL_POST_CUE_WINDOW_SEC && state.lastInductionCueBaselineRawAvg != null && state.lastInductionCuePostRawValues.length >= AROUSAL_POST_CUE_WINDOW_SEC) {
+          var inductionPostMetric = state.lastInductionCuePostRawValues.reduce(function(a, b) { return a + b; }, 0) / state.lastInductionCuePostRawValues.length;
+          if (inductionPostMetric > state.lastInductionCueBaselineRawAvg) {
+            var train = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
+            if (train && train.induction.cues.length) {
+              train.induction.cues[train.induction.cues.length - 1].arousal_detected = true;
+              train.induction.arousal_threshold = state.inductionVolume;
+              state.arousal_threshold = state.inductionVolume;
+              // Next train in this REM episode: cap induction at 95% of the arousal volume.
+              var nextCap = getRoundedDownBeepVariantVolume(Math.min(1, state.inductionVolume * 0.95));
+              state.nextTrainInductionCap = Math.max(getInductionStartVolume(), nextCap);
+              saveArousalThreshold(state.arousal_threshold);
+              console.log('Arousal threshold set (post-cue raw > REM raw q90):', state.arousal_threshold, 'postCueMetric=', inductionPostMetric, 'baselineQ=', state.lastInductionCueBaselineRawAvg);
             }
-            console.log('Disruptive wave arousal volume set:', state.disruptiveWaveArousalVolume, 'target:', state.disruptiveWaveTargetVolume);
+            endTrain(true);
           }
         }
-        var inArousalWindow = state.lastInductionPlayEpoch != null && (state.secondsRecorded - state.lastInductionPlayEpoch) < AROUSAL_CHECK_WINDOW_SEC;
-        if (!state.fakeRemTestActive && state.consecutive_seconds_above_threshold === MOVEMENT_DURATION_FOR_AROUSAL && inArousalWindow && state.trainPhase === 'induction') {
-          var train = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
-          if (train && train.induction.cues.length) {
-            train.induction.cues[train.induction.cues.length - 1].arousal_detected = true;
-            train.induction.arousal_threshold = state.inductionVolume;
-            state.arousal_threshold = state.inductionVolume;
-            // Next train in this REM episode: cap induction at 95% of the arousal volume.
-            var nextCap = getRoundedDownBeepVariantVolume(Math.min(1, state.inductionVolume * 0.95));
-            state.nextTrainInductionCap = Math.max(getInductionStartVolume(), nextCap);
-            saveArousalThreshold(state.arousal_threshold);
-            console.log('Arousal threshold set:', state.arousal_threshold);
-          }
-          endTrain(true);
-        }
-      } else {
-        state.consecutive_seconds_above_threshold = 0;
-        state.disruptiveRampConsecutiveAbove = 0;
       }
 
       if (!state.inRemEpisode) {
@@ -2340,6 +2463,7 @@ function playFixedBeep75(durationMs, onEnded) {
         if (readyForFirstTrain && state.trainPhase === null && refractoryOk && !state.soundRunning) {
           state.remEpisodeStartSeconds = state.secondsRecorded;
           state.remEpisodeStartTime = new Date().toISOString();
+          state.remEpisodeRawMotionValues = [];
           state.currentRemEpisodeEntryThreshold = movementNoiseFloor;
           state.inRemEpisode = true;
           state.remEntryStableStartEpoch = state.secondsRecorded;
@@ -2390,6 +2514,12 @@ function playFixedBeep75(durationMs, onEnded) {
       state.trainPhase = null;
       state.trainStartEpoch = null;
       state.lastInductionPlayEpoch = null;
+      state.lastInductionCueBaselineRawAvg = null;
+      state.lastInductionCuePostRawValues = [];
+      state.lastDisruptiveCueEpoch = null;
+      state.lastDisruptiveCueBaselineRawQ = null;
+      state.lastDisruptiveCuePostRawValues = [];
+      state.remEpisodeRawMotionValues = [];
       state.disruptiveRampActive = false;
       state.disruptiveRampFoundVolume = null;
       state.disruptiveRampCandidateVolume = 0;
@@ -2432,19 +2562,15 @@ function playFixedBeep75(durationMs, onEnded) {
   // Handles start sequence.
   function handleStartSequence() {
     function applyBaselineAndProceed(savedBaseline) {
-      fetchCurrentSystemVolume().then(function(vNow) {
-        state.observedSystemVolume = (vNow != null) ? vNow : null;
-        state.baselineSetObservedSystemVolume = (vNow != null) ? vNow : null;
-        var baseline = (savedBaseline != null && savedBaseline > 0) ? savedBaseline : 0.5;
-        baseline = Math.max(0.01, Math.min(1, baseline));
-        state.userMinVolume = baseline;
-        state.titrationCeiling = Math.min(1, baseline + USER_MIN_VOLUME_CEILING_DELTA);
-        state.finalSleepVolume = baseline;
-        state.baselineSliderVolume = baseline;
-        saveBaselineVolume(state.pid, baseline);
-        state.appStep = 4;
-        render();
-      });
+      var baseline = (savedBaseline != null && savedBaseline > 0) ? savedBaseline : 0.5;
+      baseline = Math.max(0.01, Math.min(1, baseline));
+      state.userMinVolume = baseline;
+      state.titrationCeiling = Math.min(1, baseline + USER_MIN_VOLUME_CEILING_DELTA);
+      state.finalSleepVolume = baseline;
+      state.baselineSliderVolume = baseline;
+      saveBaselineVolume(state.pid, baseline);
+      state.appStep = 4;
+      render();
     }
     requestMotionPermission().then(function(result) {
       if (result === 'granted') enableNoSleep();
@@ -2456,14 +2582,28 @@ function playFixedBeep75(durationMs, onEnded) {
     });
   }
 
-  // Returns volume plugin.
-  function getVolumePlugin() {
-    var Plugins = window.Capacitor && window.Capacitor.Plugins;
-    if (!Plugins) return null;
-    return Plugins.VolumeButtons || Plugins.VolumeControl || null;
+  // Returns plugin that exposes actual system volume (Control Center value).
+  function getSystemVolumePlugin() {
+    var Cap = window.Capacitor;
+    var Plugins = Cap && Cap.Plugins;
+    if (Plugins) {
+      if (Plugins.SystemVolume) return Plugins.SystemVolume;
+      if (Plugins.SystemVolumePlugin) return Plugins.SystemVolumePlugin;
+      if (Plugins.VolumeControl) return Plugins.VolumeControl;
+    }
+    // Capacitor v6+ custom plugins often require explicit JS proxy registration.
+    if (Cap && typeof Cap.registerPlugin === 'function') {
+      if (!window.luciSystemVolumeProxy) {
+        try { window.luciSystemVolumeProxy = Cap.registerPlugin('SystemVolume'); } catch (e) { window.luciSystemVolumeProxy = null; }
+      }
+      if (window.luciSystemVolumeProxy) return window.luciSystemVolumeProxy;
+    }
+    return null;
   }
 
   function normalizeSystemVolumeValue(v) {
+    if (v == null) return null;
+    if (typeof v === 'string' && v.trim() === '') return null;
     var n = Number(v);
     if (!isFinite(n)) return null;
     if (n > 1.0001 && n <= 100) n = n / 100;
@@ -2472,12 +2612,29 @@ function playFixedBeep75(durationMs, onEnded) {
     return n;
   }
 
+  function updateObservedSystemVolume(v) {
+    var normalized = normalizeSystemVolumeValue(v);
+    if (normalized == null) return false;
+    state.observedSystemVolume = normalized;
+    state.baselineSetObservedSystemVolume = normalized;
+    return true;
+  }
+
   function fetchCurrentSystemVolume() {
-    var VP = getVolumePlugin();
+    var VP = getSystemVolumePlugin();
     if (!VP) return Promise.resolve(null);
+    if (typeof VP.getCurrentSystemVolume === 'function') {
+      return VP.getCurrentSystemVolume().then(function(res) {
+        if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
+        if (res && typeof res.volume === 'number') return normalizeSystemVolumeValue(res.volume);
+        if (typeof res === 'number') return normalizeSystemVolumeValue(res);
+        return null;
+      }).catch(function() { return null; });
+    }
     if (typeof VP.getVolume === 'function') {
       return VP.getVolume().then(function(res) {
         if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
+        if (res && typeof res.volume === 'number') return normalizeSystemVolumeValue(res.volume);
         if (typeof res === 'number') return normalizeSystemVolumeValue(res);
         return null;
       }).catch(function() { return null; });
@@ -2485,6 +2642,7 @@ function playFixedBeep75(durationMs, onEnded) {
     if (typeof VP.getCurrentVolume === 'function') {
       return VP.getCurrentVolume().then(function(res) {
         if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
+        if (res && typeof res.volume === 'number') return normalizeSystemVolumeValue(res.volume);
         if (typeof res === 'number') return normalizeSystemVolumeValue(res);
         return null;
       }).catch(function() { return null; });
@@ -2492,24 +2650,50 @@ function playFixedBeep75(durationMs, onEnded) {
     return Promise.resolve(null);
   }
 
+  function delayMs(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+  }
+
+  // For wake-final export: perform multiple spaced reads and keep latest non-null sample.
+  function fetchFreshSystemVolumeForSend() {
+    var latest = null;
+    return fetchCurrentSystemVolume()
+      .then(function(v1) {
+        if (normalizeSystemVolumeValue(v1) != null) latest = normalizeSystemVolumeValue(v1);
+        return delayMs(250);
+      })
+      .then(function() { return fetchCurrentSystemVolume(); })
+      .then(function(v2) {
+        if (normalizeSystemVolumeValue(v2) != null) latest = normalizeSystemVolumeValue(v2);
+        return delayMs(400);
+      })
+      .then(function() { return fetchCurrentSystemVolume(); })
+      .then(function(v3) {
+        if (normalizeSystemVolumeValue(v3) != null) latest = normalizeSystemVolumeValue(v3);
+        return latest;
+      })
+      .catch(function() { return latest; });
+  }
+
   // Clears volume watch.
   function clearVolumeWatch() {
-    var VP = getVolumePlugin();
+    var VP = getSystemVolumePlugin();
+    if (state.volumeWatchPollId) {
+      clearInterval(state.volumeWatchPollId);
+      state.volumeWatchPollId = null;
+    }
     if (VP && VP.clearWatch) VP.clearWatch().catch(function() {});
     if (VP && VP.removeAllListeners) VP.removeAllListeners().catch(function() {});
+    state._volumeWatchActive = false;
   }
 
   // Sets baseline.
   function setBaseline() {
-    if (state._volumeWatchActive) {
-      state._volumeWatchActive = false;
-      clearVolumeWatch();
-    }
     var v = Math.max(0.01, Math.min(1, parseFloat(state.baselineSliderVolume) || 0.1));
     state.userMinVolume = v;
     state.titrationCeiling = Math.min(1, v + USER_MIN_VOLUME_CEILING_DELTA);
     state.finalSleepVolume = v;
-    state.baselineSetObservedSystemVolume = state.observedSystemVolume != null ? state.observedSystemVolume : null;
+    state.baselineSetObservedSystemVolume = state.observedSystemVolume != null ? state.observedSystemVolume : state.baselineSetObservedSystemVolume;
     saveBaselineVolume(state.pid, v);
     state.appStep = 4;
     render();
@@ -2566,6 +2750,12 @@ function playFixedBeep75(durationMs, onEnded) {
       state.trainPhase = null;
     state.trainStartEpoch = null;
     state.lastInductionPlayEpoch = null;
+    state.lastInductionCueBaselineRawAvg = null;
+    state.lastInductionCuePostRawValues = [];
+    state.lastDisruptiveCueEpoch = null;
+    state.lastDisruptiveCueBaselineRawQ = null;
+    state.lastDisruptiveCuePostRawValues = [];
+    state.remEpisodeRawMotionValues = [];
     state.currentEpisodeTrains = [];
     state.disruptiveTimeouts = [];
     state.inductionVolume = getInductionStartVolume();
@@ -2795,6 +2985,16 @@ function playFixedBeep75(durationMs, onEnded) {
     };
   }
 
+  // Returns percentile cutoff from series (nearest-rank style via floor index).
+  function getPercentileCutoffFromSeries(series, percentile01) {
+    var s = series || [];
+    if (!s.length) return null;
+    var sorted = s.slice().sort(function(a, b) { return a - b; });
+    var p = Math.max(0, Math.min(1, percentile01));
+    var idx = Math.max(0, Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))));
+    return sorted[idx];
+  }
+
   // Returns stillness cutoff from series.
   function getStillnessCutoffFromSeries(series) {
     var s = series || [];
@@ -2826,7 +3026,7 @@ function playFixedBeep75(durationMs, onEnded) {
    * Returns { firestoreDoc, surveyData }. Firestore includes full rem_periods (episodes + nested trains).
    * surveyData adds flat trains + motionAvgs for Qualtrics URL (motion breakdowns not stored in Firestore).
    */
-  function buildSleepSessionPayload(activeMode) {
+  function buildSleepSessionPayload(activeMode, forcedUserSetPhoneVolume) {
     var rawEpisodes = state.remEpisodes.slice();
     var totalRemMinutes = rawEpisodes.reduce(function(sum, ep) { return sum + Math.round((ep.duration_sec || 0) / 60); }, 0);
     var motionAvgs = computeMotionAverages();
@@ -2903,7 +3103,8 @@ function playFixedBeep75(durationMs, onEnded) {
       night_max_trains: NIGHT_MAX_TRAINS,
       total_trains_delivered: roll.total_train_count,
       app_version: 'luci2026',
-      user_set_phone_volume: state.baselineSetObservedSystemVolume != null ? Number(state.baselineSetObservedSystemVolume) : null
+      // Strict rule: only persist a fresh reading captured at send time.
+      user_set_phone_volume: (forcedUserSetPhoneVolume != null) ? forcedUserSetPhoneVolume : null
     };
 
     var firestoreDoc = {
@@ -2927,12 +3128,15 @@ function playFixedBeep75(durationMs, onEnded) {
     };
   }
 
-  /** Night index for this participant (1-based), from condition rotation localStorage. */
+  /** Night index for this participant (1-based), date-stable by local calendar day. */
   function getNightNumberForSurvey(pid) {
     try {
       var raw = localStorage.getItem(getConditionStateKey(pid));
       if (!raw) return '';
       var cs = JSON.parse(raw);
+      if (cs && typeof cs.night_number === 'number' && isFinite(cs.night_number) && cs.night_number > 0) {
+        return String(Math.floor(cs.night_number));
+      }
       if (cs && Array.isArray(cs.spent_conditions) && cs.spent_conditions.length > 0) {
         return String(cs.spent_conditions.length);
       }
@@ -2943,6 +3147,16 @@ function playFixedBeep75(durationMs, onEnded) {
   /**
    * Qualtrics URL: send scalar fields only (no JSON payloads).
    */
+  function resetAppStateForNextLogin() {
+    state.pid = '';
+    state.tonight_condition = null;
+    state.appStep = 0;
+    state._voiceCheckDone = false;
+    state.observedSystemVolume = null;
+    state.baselineSetObservedSystemVolume = null;
+    render();
+  }
+
   function openWakeSurveyIfConfigured(sessionDoc, surveyData) {
     if (!luciWakeSurveyUrl) return;
     try {
@@ -2974,6 +3188,8 @@ function playFixedBeep75(durationMs, onEnded) {
       var base = luciWakeSurveyUrl;
       var sep = base.indexOf('?') >= 0 ? '&' : '?';
       var targetUrl = base + sep + params.toString();
+      // Reset to clean login state before navigating to survey.
+      resetAppStateForNextLogin();
       var popup = window.open(targetUrl, '_blank', 'noopener,noreferrer');
       // iOS webviews often block new-tab popups from async callbacks; force same-tab redirect.
       if (!popup) window.location.assign(targetUrl);
@@ -3598,10 +3814,30 @@ function playFixedBeep75(durationMs, onEnded) {
   }
 
   // Sends sleep data.
-  function sendSleepData(activeMode) {
+  function sendSleepData(activeMode, skipVolumeRefresh, forcedUserSetPhoneVolume) {
     if (!state.pid) return;
+    if (!skipVolumeRefresh) {
+      // Clear any transient in-memory value; send only a fresh wake-time read.
+      state.observedSystemVolume = null;
+      state.baselineSetObservedSystemVolume = null;
+      fetchFreshSystemVolumeForSend().then(function(vNow) {
+        sendSleepData(activeMode, true, normalizeSystemVolumeValue(vNow));
+      }).catch(function() {
+        sendSleepData(activeMode, true, null);
+      });
+      return;
+    }
 
-    var built = buildSleepSessionPayload(activeMode);
+    var finalForcedVolume = normalizeSystemVolumeValue(forcedUserSetPhoneVolume);
+    if (finalForcedVolume != null) {
+      updateObservedSystemVolume(finalForcedVolume);
+    } else if (arguments.length >= 3) {
+      // Explicit "no fresh reading" path: keep null rather than stale previous value.
+      state.observedSystemVolume = null;
+      state.baselineSetObservedSystemVolume = null;
+    }
+
+    var built = buildSleepSessionPayload(activeMode, finalForcedVolume);
     var doc = built.firestoreDoc;
     var uploadDocs = buildFirestoreUploadDocs(doc);
     if (uploadDocs.length > 1) {
@@ -3688,6 +3924,7 @@ function playFixedBeep75(durationMs, onEnded) {
       state.currentRemEpisodeEntryThreshold = null;
     }
     disableNoSleep();
+    clearVolumeWatch();
     if (state.accelHandler) {
       window.removeEventListener('devicemotion', state.accelHandler);
       state.accelHandler = null;
@@ -3713,12 +3950,18 @@ function playFixedBeep75(durationMs, onEnded) {
     state._voiceCheckDone = false;
     state.epochs = 0;
     state.totalStimCount = 0;
+    state.observedSystemVolume = null;
+    state.baselineSetObservedSystemVolume = null;
     render();
   }
 
   // Applies config data.
   function applyConfigData(pid) {
+    clearVolumeWatch();
     state.pid = pid;
+    // Start each login/night with a fresh volume capture to avoid stale reuse.
+    state.observedSystemVolume = null;
+    state.baselineSetObservedSystemVolume = null;
     state.beepDurationMs = DEFAULT_BEEP_DURATION_MS;
     state.intervalSeconds = 10;
     ensureConditionForTonight(pid);
@@ -3747,6 +3990,10 @@ function playFixedBeep75(durationMs, onEnded) {
   function fetchConfig() {
     const pid = (document.getElementById('pidInput') || pidInput).value.trim();
     if (!pid) return;
+    if (!validateParticipantId(pid)) {
+      showSnackbar('Invalid Participant ID format. Please follow the link on the Store to register to the study, then enter the exact ID you received.', 30000);
+      return;
+    }
     applyConfigData(pid);
   }
 
@@ -3773,10 +4020,6 @@ function playFixedBeep75(durationMs, onEnded) {
 
     container.innerHTML = '';
 
-    if (state.appStep !== 3 && state._volumeWatchActive) {
-      state._volumeWatchActive = false;
-      clearVolumeWatch();
-    }
     if (state.appStep !== 'training' && state.trainingActive) {
       stopTrainingPhase();
     }
@@ -3848,6 +4091,9 @@ function playFixedBeep75(durationMs, onEnded) {
             var chunks = [];
             var startTs = 0;
             var durationInterval = null;
+            function showMicrophonePermissionHelp(err) {
+              showSnackbar('Microphone access denied. Open your phone Settings > LuciDreams and enable Microphone, then come back and tap Record again.', 30000);
+            }
             // Updates duration.
             function updateDuration() {
               var el = document.getElementById('voiceDuration');
@@ -3895,7 +4141,6 @@ function playFixedBeep75(durationMs, onEnded) {
                   setVoiceBlob(state.pid, blob, function(ok) {
                     if (ok) {
                       state.hasVoiceRecording = true;
-                      showSnackbar('Recording saved. Use it or record again.');
                     } else showSnackbar('Could not save recording.');
                     render();
                   });
@@ -3907,7 +4152,9 @@ function playFixedBeep75(durationMs, onEnded) {
                 var sb = document.getElementById('voiceStopBtn');
                 if (rb) rb.style.display = 'none';
                 if (sb) sb.style.display = '';
-              }).catch(function() { showSnackbar('Microphone access denied.'); });
+              }).catch(function(err) {
+                showMicrophonePermissionHelp(err);
+              });
             }
             // Handles on stop click.
             function onStopClick() { stopRecording(); }

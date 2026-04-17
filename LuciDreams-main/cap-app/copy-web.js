@@ -84,10 +84,10 @@ console.log('Copied sounds/beep.wav -> ios/App/App/beep.wav');
   console.log('Copied sounds/' + name + ' -> www/sounds, ios/App/App/sounds, ios/App/App');
 });
 
-// Copy optional baked-volume beep variants (beep_v0.wav ... beep_v100.wav).
+// Copy optional baked-volume beep variants (beep_v0.wav ... beep_v100.wav, plus low-range half steps like beep_v0_5.wav).
 if (fs.existsSync(SRC_SOUNDS)) {
   fs.readdirSync(SRC_SOUNDS)
-    .filter(function(name) { return /^beep_v\d{1,3}\.wav$/.test(name); })
+    .filter(function(name) { return /^beep_v\d{1,3}(?:_5)?\.wav$/.test(name); })
     .forEach(function(name) {
       const src = path.join(SRC_SOUNDS, name);
       const dstWeb = path.join(DST_SOUNDS, name);

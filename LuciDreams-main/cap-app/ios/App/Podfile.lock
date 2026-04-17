@@ -1,17 +1,19 @@
 PODS:
-  - Capacitor (6.2.1):
+  - Capacitor (8.3.0):
     - CapacitorCordova
-  - CapacitorCommunityNativeAudio (6.0.0):
+  - CapacitorCommunityNativeAudio (8.0.0):
     - Capacitor
-  - CapacitorCommunityVolumeButtons (6.0.1):
+  - CapacitorCommunityVolumeButtons (8.0.0):
     - Capacitor
-  - CapacitorCordova (6.2.1)
-  - CapacitorFilesystem (6.0.4):
+  - CapacitorCordova (8.3.0)
+  - CapacitorFilesystem (8.1.2):
     - Capacitor
-  - CapacitorHaptics (6.0.3):
+    - IONFilesystemLib (~> 1.1.1)
+  - CapacitorHaptics (8.0.2):
     - Capacitor
-  - CapawesomeCapacitorTorch (6.2.1):
+  - CapawesomeCapacitorTorch (8.0.1):
     - Capacitor
+  - IONFilesystemLib (1.1.2)
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
@@ -21,6 +23,10 @@ DEPENDENCIES:
   - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
   - "CapacitorHaptics (from `../../node_modules/@capacitor/haptics`)"
   - "CapawesomeCapacitorTorch (from `../../node_modules/@capawesome/capacitor-torch`)"
+
+SPEC REPOS:
+  trunk:
+    - IONFilesystemLib
 
 EXTERNAL SOURCES:
   Capacitor:
@@ -39,14 +45,15 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capawesome/capacitor-torch"
 
 SPEC CHECKSUMS:
-  Capacitor: c95400d761e376be9da6be5a05f226c0e865cebf
-  CapacitorCommunityNativeAudio: 8660b1c13d0cbd07f23e365dd4e05f23c58e271d
-  CapacitorCommunityVolumeButtons: dd892a2c3d7c49a4536fcd97f6d6037fe96e0646
-  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
-  CapacitorFilesystem: 5b9aec35c0212bd0064e26d278c93e925864f212
-  CapacitorHaptics: 40f83026feeee9cfe36e89e9c98a3baaaf20c450
-  CapawesomeCapacitorTorch: 28598b99799c75f3a9b8f9af633324e16240818f
+  Capacitor: 22e541237135648c9aa736232bb4d2eec35fddcb
+  CapacitorCommunityNativeAudio: 0d1336ea95a8f1911292e082d5436961e4447cd8
+  CapacitorCommunityVolumeButtons: 532398512c4e0878072cb889db46aa28f2ff45b4
+  CapacitorCordova: 2e1e2bb93b2f365309dc4ff18b72b9a69a7814a9
+  CapacitorFilesystem: 2db285a1ac6e475cc27cae2e1bea999000f9e2be
+  CapacitorHaptics: 296f771ecd89c7a1bd92a7b6826a7d268e2e70f5
+  CapawesomeCapacitorTorch: d118c3fe55e7472061f02d4775f08899fde73a32
+  IONFilesystemLib: 21a63377696b2d8fab5632ecfb7d2ac67bddb68a
 
-PODFILE CHECKSUM: 6e5679670f2e4c1f9a4c0eff68926f20815031c1
+PODFILE CHECKSUM: 889b90bff1f89f80f7d357e760f11a5cd0e8588f
 
 COCOAPODS: 1.16.2

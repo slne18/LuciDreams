@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Generate beep_v0.wav ... beep_v100.wav and sync to app sound folders.
+Generate beep variants and sync to app sound folders.
+
+Naming:
+- Integer percent: selected steps only (e.g. beep_v0.wav, beep_v5.wav, ... beep_v100.wav)
+- Half-percent in low range: beep_v0_5.wav ... beep_v9_5.wav
 
 By default this script reads a reference beep from cap-app/www/sounds/beep.wav.
 If missing, it synthesizes a short sine beep.
@@ -10,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import shutil
 import wave
 from array import array
 from pathlib import Path
@@ -80,8 +83,24 @@ def write_mono_16bit_wav(path: Path, sample_rate: int, samples: array) -> None:
         wf.writeframes(samples.tobytes())
 
 
+def build_variant_levels() -> list[tuple[float, str]]:
+    levels: list[tuple[float, str]] = []
+    # 0..10% by 0.5%
+    for i in range(0, 21):
+        pct = i * 0.5
+        if abs(pct - round(pct)) < 1e-9:
+            suffix = str(int(round(pct)))
+        else:
+            suffix = f"{int(pct)}_5"
+        levels.append((pct / 100.0, suffix))
+    # 15..100% by 5%
+    for pct_int in range(15, 101, 5):
+        levels.append((pct_int / 100.0, str(pct_int)))
+    return levels
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate beep_v0..v100 WAV files in all app sound folders.")
+    parser = argparse.ArgumentParser(description="Generate beep variants WAV files in all app sound folders.")
     parser.add_argument("--reference", default=str(DEFAULT_REFERENCE), help="Reference WAV file path.")
     parser.add_argument("--skip-beep-alias", action="store_true", help="Do not create/refresh beep.wav alias.")
     args = parser.parse_args()
@@ -96,17 +115,23 @@ def main() -> int:
 
     for target_dir in TARGET_DIRS:
         target_dir.mkdir(parents=True, exist_ok=True)
-        for step in range(0, 101):
-            gain = step / 100.0
-            out_path = target_dir / f"beep_v{step}.wav"
+        expected_variant_names = set()
+        for gain, suffix in build_variant_levels():
+            name = f"beep_v{suffix}.wav"
+            expected_variant_names.add(name)
+            out_path = target_dir / f"beep_v{suffix}.wav"
             write_mono_16bit_wav(out_path, sample_rate, scale_samples(ref_samples, gain))
+        # Delete stale variants that are no longer used by app logic.
+        for existing in target_dir.glob("beep_v*.wav"):
+            if existing.name not in expected_variant_names:
+                existing.unlink()
         if not args.skip_beep_alias:
             alias = target_dir / "beep.wav"
             src = target_dir / "beep_v100.wav"
-            shutil.copyfile(src, alias)
+            write_mono_16bit_wav(alias, sample_rate, scale_samples(ref_samples, 1.0))
         print(f"Generated variants in: {target_dir}")
 
-    print("Done: beep_v0.wav ... beep_v100.wav in all target folders.")
+    print("Done: generated beep integer variants + low-range half-step variants in all target folders.")
     return 0
 
 
