@@ -234,18 +234,13 @@ def main() -> None:
         if overview_dir:
             os.makedirs(overview_dir, exist_ok=True)
         sorted_secs = sorted(sec_to_val.keys())
-        overview_start_sec = max(FOUR_HOURS_SECONDS, first_valid_sec)
+        # Full-night overview: from first valid motion sample (already offset-aligned)
+        # to last available motion value.
+        overview_start_sec = first_valid_sec
         x_all = [sec_to_time[s] for s in sorted_secs if s in sec_to_time and s >= overview_start_sec]
         y_all = [round(sec_to_val[s], 3) for s in sorted_secs if s in sec_to_time and s >= overview_start_sec]
         if not x_all:
-            raise ValueError("No motion points from first valid sample onward after 4h gate for overview plot.")
-        # Drop last 30 seconds (awakening period not relevant for overnight trend).
-        trim_n = min(30, len(y_all))
-        if trim_n > 0:
-            y_all = y_all[:-trim_n]
-            x_all = x_all[:-trim_n]
-        if not x_all:
-            raise ValueError("No overview points left after trimming the last 30 values.")
+            raise ValueError("No motion points from first valid sample onward for overview plot.")
         fig_o, ax_o = plt.subplots(figsize=(14, 6))
         ax_o.plot(x_all, y_all, linewidth=1.2, color="tab:blue", label="motion smoothed")
         first = True
@@ -262,7 +257,7 @@ def main() -> None:
         for ep_idx in cues_by_episode:
             for c in cues_by_episode[ep_idx]:
                 cs = c["cue_sec"]
-                if cs < FOUR_HOURS_SECONDS:
+                if cs < overview_start_sec:
                     continue
                 ct = sec_to_time.get(cs)
                 if ct is None:
