@@ -128,6 +128,9 @@ def main() -> None:
 
     sel_pid, sel_start, sel_night = choose_session(cutoff_rows, args.pid, args.session_start_boston, args.night_number)
     os.makedirs(MOTION_PLOTS_DIR, exist_ok=True)
+    session_start_dt = parse_hms(sel_start)
+    if session_start_dt is None:
+        raise ValueError(f"Invalid selected session_start_boston: {sel_start}")
 
     # Build per-second data maps for selected session (prefer smoothed motion).
     sec_to_val: Dict[int, float] = {}
@@ -151,12 +154,13 @@ def main() -> None:
         if raw_val is None:
             raw_val = row.get("motion_80pct_cutoff", "")
         val = as_float(raw_val)
-        t = parse_hms(row.get("time_boston", ""))
-        if sec is None or val is None or t is None:
+        if sec is None or val is None:
             continue
         sec = sec + sec_offset
         sec_to_val[sec] = val
-        sec_to_time[sec] = t
+        # Build monotonic clock time from session start + elapsed seconds.
+        # This preserves midnight rollover (night sessions spanning 00:00).
+        sec_to_time[sec] = session_start_dt + timedelta(seconds=sec)
 
     if not sec_to_val:
         raise ValueError("No motion data found for selected session.")

@@ -787,7 +787,7 @@
   const DISRUPTIVE_WAVE_VOLUME = 0.15;            // theta/gamma disruptive wave volume fixed at 15%
   const DISRUPTIVE_THETA_ASSET = 'theta.mp3';
   const DISRUPTIVE_GAMMA_ASSET = 'gamma.mp3';
-  const FIXED_BEEP_75_TRAINING_ASSET_ID = 'beep_v75';
+  const FIXED_BEEP_75_TRAINING_ASSET_ID = 'beep_v90';
   const FIXED_BEEP_75_ASSET_ID = 'beep_v75';
   const DISRUPTIVE_LIGHT_OFFSET_MS = 90000;   // 1m30 after train start
   const DISRUPTIVE_LIGHT_DURATION_MS = 30000; // 30s at 100%
@@ -804,7 +804,7 @@
     for (var j = 15; j <= 100; j += 5) levels.push(j / 100);
     return levels;
   })();
-  const LD_BEEP_DURATION_MS = 500;
+  const LD_BEEP_DURATION_MS = 1000;
   // App-wide cue
   const DEFAULT_BEEP_DURATION_MS = 150;
   const CONDITION_POOL = APP_TEST_MODE ? [4, 5] : [0, 1, 2, 3, 4, 5, 6, 7];
@@ -2047,17 +2047,17 @@
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
     if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
-      playBeep(0.8, durationMs, onEnded);
+      playBeep(0.9, durationMs, onEnded);
       return;
     }
     ensureNativeBeepPreloaded().then(function(ok) {
       if (!ok) {
-        playBeep(0.8, durationMs, onEnded);
+        playBeep(0.9, durationMs, onEnded);
         return;
       }
       ensureNativeBeepVariantsPreloaded().then(function(ready) {
         if (!ready) {
-          playBeep(0.8, durationMs, onEnded);
+          playBeep(0.9, durationMs, onEnded);
           return;
         }
         stopNativeBeepVariants(NA);
@@ -2070,13 +2070,13 @@
             }, durationMs);
           })
           .catch(function() {
-            playBeep(0.8, durationMs, onEnded);
+            playBeep(0.9, durationMs, onEnded);
           });
       }).catch(function() {
-        playBeep(0.8, durationMs, onEnded);
+        playBeep(0.9, durationMs, onEnded);
       });
     }).catch(function() {
-      playBeep(0.8, durationMs, onEnded);
+      playBeep(0.9, durationMs, onEnded);
     });
   }
 
