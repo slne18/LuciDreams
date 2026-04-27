@@ -11,6 +11,8 @@ PODS:
     - IONFilesystemLib (~> 1.1.1)
   - CapacitorHaptics (8.0.2):
     - Capacitor
+  - CapacitorVoiceRecorder (7.0.6):
+    - Capacitor
   - CapawesomeCapacitorTorch (8.0.1):
     - Capacitor
   - IONFilesystemLib (1.1.2)
@@ -22,6 +24,7 @@ DEPENDENCIES:
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
   - "CapacitorHaptics (from `../../node_modules/@capacitor/haptics`)"
+  - CapacitorVoiceRecorder (from `../../node_modules/capacitor-voice-recorder`)
   - "CapawesomeCapacitorTorch (from `../../node_modules/@capawesome/capacitor-torch`)"
 
 SPEC REPOS:
@@ -41,6 +44,8 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/filesystem"
   CapacitorHaptics:
     :path: "../../node_modules/@capacitor/haptics"
+  CapacitorVoiceRecorder:
+    :path: "../../node_modules/capacitor-voice-recorder"
   CapawesomeCapacitorTorch:
     :path: "../../node_modules/@capawesome/capacitor-torch"
 
@@ -51,9 +56,10 @@ SPEC CHECKSUMS:
   CapacitorCordova: 2e1e2bb93b2f365309dc4ff18b72b9a69a7814a9
   CapacitorFilesystem: 2db285a1ac6e475cc27cae2e1bea999000f9e2be
   CapacitorHaptics: 296f771ecd89c7a1bd92a7b6826a7d268e2e70f5
+  CapacitorVoiceRecorder: 9158861be982f32d411769723a4d813d6ce46135
   CapawesomeCapacitorTorch: d118c3fe55e7472061f02d4775f08899fde73a32
   IONFilesystemLib: 21a63377696b2d8fab5632ecfb7d2ac67bddb68a
 
-PODFILE CHECKSUM: 889b90bff1f89f80f7d357e760f11a5cd0e8588f
+PODFILE CHECKSUM: 408947032b615ebf25464b065ebf669edd239de6
 
 COCOAPODS: 1.16.2

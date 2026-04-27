@@ -780,6 +780,10 @@
   // - true: CONDITION_POOL=[4,5] and "Skip training" is visible
   // - false: CONDITION_POOL=[0..7] and no skip button
   const APP_TEST_MODE = false;
+  // Preferred native recording path for Android in Capacitor app.
+  const USE_NATIVE_VOICE_RECORDER_PLUGIN = true;
+  // On Android/Capacitor, prefer system recorder over WebView getUserMedia for reliability.
+  const USE_ANDROID_NATIVE_AUDIO_PICKER_PRIMARY = false;
   // One train = 2min disruptive + LD induction (until arousal)
   const DISRUPTIVE_PERIOD_SEC = 120;
   const DISRUPTIVE_SOUND_DURATION_MS = 3000;    // disruptive beep lasts 3 seconds
@@ -883,6 +887,10 @@
     accelHandler: null,
     motionSampleTimer: null,
     disruptiveWaveAssetId: null,
+    disruptiveWaveHtmlAudio: null,
+    disruptiveWaveGainNode: null,
+    disruptiveWaveMediaSource: null,
+    disruptiveWaveAudioCtx: null,
     noSleep: null,
     sleepStartTime: null,
     timerInterval: null,
@@ -942,8 +950,37 @@
     trainingCueWatchdogTimeoutId: null,
     trainingSkipped: false,
     voiceVariantCachePid: null,
-    voiceVariantBlobs: null
+    voiceVariantBlobs: null,
+    featureChecks: {},
+    featureCheckDetails: {}
   };
+
+  function createInitialFeatureChecks() {
+    return {
+      microphone: 'idle',
+      vibration: 'idle',
+      flashlight: 'idle',
+      motion: 'idle',
+      beep_v80: 'idle'
+    };
+  }
+
+  function createInitialFeatureCheckDetails() {
+    return {
+      microphone: '',
+      vibration: '',
+      flashlight: '',
+      motion: '',
+      beep_v80: ''
+    };
+  }
+
+  function resetFeatureChecks() {
+    state.featureChecks = createInitialFeatureChecks();
+    state.featureCheckDetails = createInitialFeatureCheckDetails();
+  }
+
+  resetFeatureChecks();
 
   if (!db) state.appStep = -1;
 
@@ -1076,23 +1113,47 @@
 
   // Stops disruptive wave noise.
   function stopDisruptiveWaveNoise() {
-    var Cap = window.Capacitor;
-    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
-    var id = state.disruptiveWaveAssetId;
-    if (!id || !NA) {
-      state.disruptiveWaveAssetId = null;
-      return;
+    if (state.disruptiveWaveMediaSource) {
+      try { state.disruptiveWaveMediaSource.disconnect(); } catch (e) {}
+      state.disruptiveWaveMediaSource = null;
     }
-    NA.stop({ assetId: id }).catch(function() {});
+    if (state.disruptiveWaveGainNode) {
+      try { state.disruptiveWaveGainNode.disconnect(); } catch (e) {}
+      state.disruptiveWaveGainNode = null;
+    }
+    if (state.disruptiveWaveHtmlAudio) {
+      try {
+        state.disruptiveWaveHtmlAudio.pause();
+        state.disruptiveWaveHtmlAudio.onended = null;
+        state.disruptiveWaveHtmlAudio.onerror = null;
+      } catch (e) {}
+      state.disruptiveWaveHtmlAudio = null;
+    }
     state.disruptiveWaveAssetId = null;
   }
-  // Starts disruptive wave noise.
+  function getDisruptiveWaveAudioContext() {
+    if (state.disruptiveWaveAudioCtx) return state.disruptiveWaveAudioCtx;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try {
+      state.disruptiveWaveAudioCtx = new AC();
+    } catch (e) {
+      state.disruptiveWaveAudioCtx = null;
+    }
+    return state.disruptiveWaveAudioCtx;
+  }
+  function getCapacitorPlatform() {
+    var Cap = window.Capacitor;
+    if (Cap && typeof Cap.getPlatform === 'function') {
+      try { return Cap.getPlatform(); } catch (e) {}
+    }
+    return 'web';
+  }
+  // Starts disruptive wave noise via HTML audio (same path as working test behavior).
   function startDisruptiveWaveNoise(waveHz, volume, trainRecord) {
     var cfg = waveHz === 8
       ? { assetId: 'theta_noise_15', filename: DISRUPTIVE_THETA_ASSET }
       : { assetId: 'gamma_noise_15', filename: DISRUPTIVE_GAMMA_ASSET };
-    var Cap = window.Capacitor;
-    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
     trainRecord.disruptive.took_place = true;
     trainRecord.disruptive.params = {
       type: 'continuous_noise',
@@ -1100,38 +1161,71 @@
       asset: cfg.filename,
       volume: volume
     };
-    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
-      luciNativeError('audio', 'not_native');
-      return;
-    }
-    ensureNativeLongAssetPreloaded(cfg.assetId, cfg.filename, volume).then(function(ok) {
-      if (!ok || !window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.NativeAudio) {
-        luciNativeError('audio', 'unavailable');
-        return;
+    stopDisruptiveWaveNoise();
+    try {
+      var audio = new Audio('sounds/' + cfg.filename);
+      audio.loop = true;
+      audio.preload = 'auto';
+      var clampedVol = Math.max(0, Math.min(1, volume));
+      audio.volume = clampedVol;
+      audio.onerror = function(e) {
+        window.luciNativeAudioLastError = 'html loop ' + cfg.filename + ': ' + (e && (e.message || e.error || String(e)) || 'unknown');
+        stopDisruptiveWaveNoise();
+        state.soundRunning = false;
+        render();
+      };
+      var platform = getCapacitorPlatform();
+      // Keep Android on plain HTML volume path; use WebAudio gain path for iOS.
+      if (platform === 'ios') {
+        var ctx = getDisruptiveWaveAudioContext();
+        if (ctx) {
+          try {
+            if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+              ctx.resume().catch(function() {});
+            }
+            var src = ctx.createMediaElementSource(audio);
+            var gain = ctx.createGain();
+            gain.gain.value = clampedVol;
+            src.connect(gain);
+            gain.connect(ctx.destination);
+            state.disruptiveWaveMediaSource = src;
+            state.disruptiveWaveGainNode = gain;
+            audio.volume = 1; // avoid double attenuation; gain node controls effective volume
+          } catch (eSetup) {
+            state.disruptiveWaveMediaSource = null;
+            state.disruptiveWaveGainNode = null;
+          }
+        }
       }
+      audio.play().then(function() {
+        state.disruptiveWaveHtmlAudio = audio;
+        state.disruptiveWaveAssetId = cfg.assetId;
+        state.soundRunning = true;
+        render();
+      }).catch(function(e) {
+        window.luciNativeAudioLastError = 'html play ' + cfg.filename + ': ' + (e && (e.message || e.error || String(e)) || 'unknown');
+        stopDisruptiveWaveNoise();
+        state.soundRunning = false;
+        render();
+      });
+    } catch (e2) {
+      window.luciNativeAudioLastError = 'html setup ' + cfg.filename + ': ' + (e2 && (e2.message || e2.error || String(e2)) || 'unknown');
       stopDisruptiveWaveNoise();
-      state.disruptiveWaveAssetId = cfg.assetId;
-      state.soundRunning = true;
-      NA.stop({ assetId: cfg.assetId }).catch(function() {})
-        .then(function() { return NA.setVolume({ assetId: cfg.assetId, volume: Math.max(0, Math.min(1, volume)) }); }).catch(function() {})
-        .then(function() { return NA.loop({ assetId: cfg.assetId }); })
-        .then(function() { render(); })
-        .catch(function(e) {
-          window.luciNativeAudioLastError = 'loop ' + cfg.filename + ': ' + (e && (e.message || e.error || String(e)) || 'unknown');
-          stopDisruptiveWaveNoise();
-          state.soundRunning = false;
-          luciNativeError('audio', 'unavailable');
-          render();
-        });
-    });
+      state.soundRunning = false;
+      render();
+    }
   }
-  // Updates disruptive wave noise volume while looping.
+  // Updates disruptive wave noise volume while looping (HTML audio).
   function setDisruptiveWaveVolume(volume) {
-    var Cap = window.Capacitor;
-    var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
-    var id = state.disruptiveWaveAssetId;
-    if (!NA || !id) return;
-    NA.setVolume({ assetId: id, volume: Math.max(0, Math.min(1, volume)) }).catch(function() {});
+    var v = Math.max(0, Math.min(1, volume));
+    if (state.disruptiveWaveGainNode && state.disruptiveWaveAudioCtx) {
+      try {
+        state.disruptiveWaveGainNode.gain.setTargetAtTime(v, state.disruptiveWaveAudioCtx.currentTime || 0, 0.06);
+        return;
+      } catch (e) {}
+    }
+    if (!state.disruptiveWaveHtmlAudio) return;
+    state.disruptiveWaveHtmlAudio.volume = v;
   }
 
   // Starts train.
@@ -1264,7 +1358,7 @@
         });
       }, DISRUPTIVE_LIGHT_OFFSET_MS));
     } else if (c === 6) {
-      // Theta (8Hz): ramp from 0 by +1% every 5s. After disruptive arousal, hold at 95% of that volume.
+      // Theta (8Hz): ramp from 0 by +1% every 2s. After disruptive arousal, hold at 95% of that volume.
       state.lastDisruptiveCueEpoch = state.secondsRecorded;
       state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
       state.lastDisruptiveCuePostRawValues = [];
@@ -1277,11 +1371,11 @@
         type: 'continuous_noise_ramp',
         wave_hz: 8,
         asset: DISRUPTIVE_THETA_ASSET,
-        ramp_step_per_5sec: 0.01,
+        ramp_step_per_2sec: 0.01,
         start_volume: 0,
         target_mode_after_arousal: '0.95x_arousal'
       };
-      for (var s6 = 1; s6 <= Math.floor(endMs / 5000); s6++) {
+      for (var s6 = 1; s6 <= Math.floor(endMs / 2000); s6++) {
         (function(stepSec6) {
           state.disruptiveTimeouts.push(setTimeout(function() {
             if (!state.inRemEpisode || state.trainPhase !== 'disruptive' || !state.disruptiveWaveRampActive) return;
@@ -1294,11 +1388,11 @@
             if (state.disruptiveWaveArousalVolume != null && state.disruptiveWaveCurrentVolume >= state.disruptiveWaveTargetVolume - 1e-6) {
               state.disruptiveWaveRampActive = false;
             }
-          }, stepSec6 * 5000));
+          }, stepSec6 * 2000));
         })(s6);
       }
     } else if (c === 7) {
-      // Gamma (30Hz): ramp from 0 by +1% every 5s. After disruptive arousal, hold at 95% of that volume.
+      // Gamma (30Hz): ramp from 0 by +1% every 2s. After disruptive arousal, hold at 95% of that volume.
       state.lastDisruptiveCueEpoch = state.secondsRecorded;
       state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
       state.lastDisruptiveCuePostRawValues = [];
@@ -1311,11 +1405,11 @@
         type: 'continuous_noise_ramp',
         wave_hz: 30,
         asset: DISRUPTIVE_GAMMA_ASSET,
-        ramp_step_per_5sec: 0.01,
+        ramp_step_per_2sec: 0.01,
         start_volume: 0,
         target_mode_after_arousal: '0.95x_arousal'
       };
-      for (var s7 = 1; s7 <= Math.floor(endMs / 5000); s7++) {
+      for (var s7 = 1; s7 <= Math.floor(endMs / 2000); s7++) {
         (function(stepSec7) {
           state.disruptiveTimeouts.push(setTimeout(function() {
             if (!state.inRemEpisode || state.trainPhase !== 'disruptive' || !state.disruptiveWaveRampActive) return;
@@ -1328,7 +1422,7 @@
             if (state.disruptiveWaveArousalVolume != null && state.disruptiveWaveCurrentVolume >= state.disruptiveWaveTargetVolume - 1e-6) {
               state.disruptiveWaveRampActive = false;
             }
-          }, stepSec7 * 5000));
+          }, stepSec7 * 2000));
         })(s7);
       }
     }
@@ -1887,24 +1981,6 @@
     finishTrainingPhase(true);
   }
 
-  // Handles restart training from beginning.
-  function restartTrainingFromBeginning() {
-    if (!state.trainingActive) return;
-    stopTrainingCurrentAudio();
-    state.trainingSkipped = false;
-    state.trainingStartMs = Date.now();
-    state.trainingRemainingSec = Math.floor(TRAINING_DURATION_MS / 1000);
-    state.trainingCueCount = 0;
-    state.trainingPostCueCountPlayed = 0;
-    state.trainingIntroDone = false;
-    state.trainingIntroStarted = false;
-    state.trainingCueInFlight = false;
-    state.trainingNextCueAtMs = null;
-    state.trainingPaused = false;
-    state.trainingPauseStartedAtMs = null;
-    state.trainingPausedAccumMs = 0;
-    render();
-  }
   // Starts training phase if needed.
   function startTrainingPhaseIfNeeded() {
     if (state.trainingActive || state.trainingComplete || state.appStep !== 'training') return;
@@ -2290,6 +2366,357 @@ function playFixedBeep75(durationMs, onEnded) {
     if (missing.length) {
       showSnackbar('Unavailable on this device: ' + missing.join(', ') + '. Do not start the night until the LuciDreams app is working.');
     }
+  }
+
+  function setFeatureCheckResult(feature, status, detail) {
+    if (!state.featureChecks) state.featureChecks = createInitialFeatureChecks();
+    if (!state.featureCheckDetails) state.featureCheckDetails = createInitialFeatureCheckDetails();
+    state.featureChecks[feature] = status;
+    state.featureCheckDetails[feature] = detail || '';
+    render();
+  }
+
+  function featureErrorText(err) {
+    if (!err) return 'unknown error';
+    if (typeof err === 'string') return err;
+    return String(err.name || err.message || err.code || 'unknown error');
+  }
+
+  function readMicPermissionState() {
+    if (!navigator.permissions || !navigator.permissions.query) return Promise.resolve('unknown');
+    return navigator.permissions.query({ name: 'microphone' })
+      .then(function(status) { return status && status.state ? status.state : 'unknown'; })
+      .catch(function() { return 'unknown'; });
+  }
+
+  function shouldRetryMicError(err) {
+    var name = err && err.name ? String(err.name) : '';
+    return name === 'NotReadableError' || name === 'AbortError' || name === 'NotAllowedError';
+  }
+
+  function acquireMicrophoneStream() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return Promise.reject(new Error('getUserMedia unavailable'));
+    }
+    var variants = [
+      { audio: true },
+      { audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } },
+      { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }
+    ];
+    var retryDelaysMs = [0, 300, 900];
+    function delay(ms) {
+      return new Promise(function(resolve) { setTimeout(resolve, ms); });
+    }
+    function tryVariant(variantIdx, retryIdx, lastErr) {
+      if (variantIdx >= variants.length) return Promise.reject(lastErr || new Error('Microphone unavailable'));
+      var constraints = variants[variantIdx];
+      var waitMs = retryDelaysMs[Math.min(retryIdx, retryDelaysMs.length - 1)];
+      return delay(waitMs).then(function() {
+        return navigator.mediaDevices.getUserMedia(constraints);
+      }).catch(function(err) {
+        if (shouldRetryMicError(err) && retryIdx < retryDelaysMs.length - 1) {
+          return tryVariant(variantIdx, retryIdx + 1, err);
+        }
+        return tryVariant(variantIdx + 1, 0, err);
+      });
+    }
+    return tryVariant(0, 0, null);
+  }
+
+  function isNativeAndroidPlatform() {
+    var Cap = window.Capacitor;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return false;
+    if (typeof Cap.getPlatform === 'function') return Cap.getPlatform() === 'android';
+    return false;
+  }
+
+  function getVoiceRecorderPlugin() {
+    var Cap = window.Capacitor;
+    if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
+    if (Cap.Plugins && Cap.Plugins.VoiceRecorder) return Cap.Plugins.VoiceRecorder;
+    if (Cap && typeof Cap.registerPlugin === 'function') {
+      try { return Cap.registerPlugin('VoiceRecorder'); } catch (e) { return null; }
+    }
+    return null;
+  }
+
+  function base64ToBlob(base64, mimeType) {
+    var cleaned = String(base64 || '').replace(/\s/g, '');
+    var binary = atob(cleaned);
+    var len = binary.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType || 'audio/aac' });
+  }
+
+  function getMicPlatformLabel() {
+    var Cap = window.Capacitor;
+    var p = (Cap && typeof Cap.getPlatform === 'function') ? Cap.getPlatform() : 'web';
+    return String(p || 'unknown');
+  }
+
+  function buildMicDiagnostic(err, beforeState, afterState, stage) {
+    var name = err && err.name ? String(err.name) : 'unknown';
+    var message = err && err.message ? String(err.message) : '';
+    var stageText = stage ? String(stage) : 'unknown';
+    var p = getMicPlatformLabel();
+    var bits = [
+      'stage=' + stageText,
+      'name=' + name,
+      'before=' + String(beforeState || 'unknown'),
+      'after=' + String(afterState || 'unknown'),
+      'platform=' + p
+    ];
+    if (message) bits.push('msg=' + message);
+    return bits.join(', ');
+  }
+
+  function captureAudioWithAndroidPicker() {
+    return new Promise(function(resolve, reject) {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*';
+      input.setAttribute('capture', 'microphone');
+      input.style.position = 'fixed';
+      input.style.left = '-9999px';
+      input.style.top = '-9999px';
+      var cleaned = false;
+      function cleanup() {
+        if (cleaned) return;
+        cleaned = true;
+        try { document.body.removeChild(input); } catch (e) {}
+      }
+      input.onchange = function() {
+        var f = input.files && input.files[0];
+        cleanup();
+        if (!f) {
+          reject(new Error('No audio selected'));
+          return;
+        }
+        resolve(f);
+      };
+      input.oncancel = function() {
+        cleanup();
+        reject(new Error('Audio capture canceled'));
+      };
+      document.body.appendChild(input);
+      input.click();
+    });
+  }
+
+  function getBlobDurationMs(blob) {
+    return new Promise(function(resolve) {
+      try {
+        var url = URL.createObjectURL(blob);
+        var a = new Audio();
+        a.preload = 'metadata';
+        var settled = false;
+        function done(ms) {
+          if (settled) return;
+          settled = true;
+          try { URL.revokeObjectURL(url); } catch (e) {}
+          resolve(ms);
+        }
+        a.onloadedmetadata = function() {
+          var d = Number(a.duration);
+          if (!isFinite(d) || d <= 0) done(null);
+          else done(Math.round(d * 1000));
+        };
+        a.onerror = function() { done(null); };
+        a.src = url;
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  function runMicrophoneFeatureCheck() {
+    setFeatureCheckResult('microphone', 'running', 'Requesting permission...');
+    if (USE_NATIVE_VOICE_RECORDER_PLUGIN && isNativeAndroidPlatform()) {
+      var VR = getVoiceRecorderPlugin();
+      if (!VR) {
+        setFeatureCheckResult('microphone', 'fail', 'VoiceRecorder plugin unavailable on Android.');
+        return Promise.resolve(false);
+      }
+      return VR.canDeviceVoiceRecord()
+        .then(function(r) {
+          if (!r || !r.value) throw new Error('DEVICE_CANNOT_VOICE_RECORD');
+          return VR.requestAudioRecordingPermission();
+        })
+        .then(function(r) {
+          if (!r || !r.value) throw new Error('MISSING_PERMISSION');
+          return VR.getCurrentStatus ? VR.getCurrentStatus().catch(function() { return null; }) : null;
+        })
+        .then(function(statusRes) {
+          if (statusRes && statusRes.status && statusRes.status !== 'NONE' && VR.stopRecording) {
+            return VR.stopRecording().catch(function() { return null; });
+          }
+          return null;
+        })
+        .then(function() { return VR.startRecording(); })
+        .then(function() { return new Promise(function(resolve) { setTimeout(resolve, 800); }); })
+        .then(function() { return VR.stopRecording(); })
+        .then(function(rec) {
+          var value = rec && rec.value ? rec.value : rec;
+          var dur = value && value.msDuration != null ? value.msDuration : null;
+          var d = dur == null ? 'unknown' : String((dur / 1000).toFixed(1)) + 's';
+          setFeatureCheckResult('microphone', 'pass', 'Native recorder OK (clip=' + d + ').');
+          return true;
+        })
+        .catch(function(err) {
+          var diag = buildMicDiagnostic(err, 'native_plugin', 'native_plugin', 'voice_recorder_test');
+          window.luciLastMicDiag = diag;
+          setFeatureCheckResult('microphone', 'fail', 'Mic failed: ' + diag);
+          return false;
+        });
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setFeatureCheckResult('microphone', 'fail', 'getUserMedia unavailable.');
+      return Promise.resolve(false);
+    }
+    return readMicPermissionState().then(function(beforeState) {
+      return acquireMicrophoneStream().then(function(stream) {
+        try { stream.getTracks().forEach(function(t) { t.stop(); }); } catch (e) {}
+      }).then(function() {
+        return readMicPermissionState().then(function(afterState) {
+          setFeatureCheckResult('microphone', 'pass', 'Microphone permission granted (state: ' + afterState + ').');
+          return true;
+        });
+      }).catch(function(err) {
+        return readMicPermissionState().then(function(afterState) {
+          var diag = buildMicDiagnostic(err, beforeState, afterState, 'getUserMedia');
+          window.luciLastMicDiag = diag;
+          setFeatureCheckResult(
+            'microphone',
+            'fail',
+            'Mic failed: ' + diag
+          );
+          return false;
+        });
+      });
+    });
+  }
+
+  function runVibrationFeatureCheck() {
+    setFeatureCheckResult('vibration', 'running', 'Trying native vibration...');
+    var Cap = window.Capacitor;
+    var Haptics = Cap && Cap.Plugins && Cap.Plugins.Haptics;
+    if (Haptics && typeof Haptics.vibrate === 'function') {
+      return Haptics.vibrate({ duration: 250 })
+        .then(function() {
+          setFeatureCheckResult('vibration', 'pass', 'Native vibration worked.');
+          return true;
+        })
+        .catch(function(err) {
+          setFeatureCheckResult('vibration', 'fail', 'Native vibration failed: ' + featureErrorText(err));
+          return false;
+        });
+    }
+    if (navigator.vibrate) {
+      navigator.vibrate(250);
+      setFeatureCheckResult('vibration', 'pass', 'Browser vibration API triggered.');
+      return Promise.resolve(true);
+    }
+    setFeatureCheckResult('vibration', 'fail', 'No vibration API available.');
+    return Promise.resolve(false);
+  }
+
+  function runFlashlightFeatureCheck() {
+    setFeatureCheckResult('flashlight', 'running', 'Trying native torch...');
+    var Cap = window.Capacitor;
+    var Torch = Cap && Cap.Plugins && Cap.Plugins.Torch;
+    if (!Torch || typeof Torch.enable !== 'function' || typeof Torch.disable !== 'function') {
+      setFeatureCheckResult('flashlight', 'fail', 'Torch plugin unavailable.');
+      return Promise.resolve(false);
+    }
+    var availability = Torch.isAvailable && typeof Torch.isAvailable === 'function'
+      ? Torch.isAvailable().catch(function() { return null; })
+      : Promise.resolve(null);
+    return availability.then(function(r) {
+      if (r && r.available === false) {
+        setFeatureCheckResult('flashlight', 'fail', 'Torch not available on this device.');
+        return false;
+      }
+      return Torch.enable()
+        .then(function() { return new Promise(function(resolve) { setTimeout(resolve, 700); }); })
+        .then(function() { return Torch.disable(); })
+        .then(function() {
+          setFeatureCheckResult('flashlight', 'pass', 'Torch toggled successfully.');
+          return true;
+        })
+        .catch(function(err) {
+          setFeatureCheckResult('flashlight', 'fail', 'Torch failed: ' + featureErrorText(err));
+          return false;
+        });
+    });
+  }
+
+  function runMotionFeatureCheck() {
+    setFeatureCheckResult('motion', 'running', 'Requesting motion access...');
+    return requestMotionPermission().then(function(result) {
+      if (result !== 'granted') {
+        setFeatureCheckResult('motion', 'fail', 'Motion permission denied.');
+        return false;
+      }
+      if (!window.DeviceMotionEvent) {
+        setFeatureCheckResult('motion', 'fail', 'DeviceMotionEvent unavailable.');
+        return false;
+      }
+      return new Promise(function(resolve) {
+        var done = false;
+        function finish(ok, msg) {
+          if (done) return;
+          done = true;
+          window.removeEventListener('devicemotion', onMotion);
+          setFeatureCheckResult('motion', ok ? 'pass' : 'fail', msg);
+          resolve(ok);
+        }
+        function onMotion(e) {
+          var a = e && e.accelerationIncludingGravity;
+          if (!a) return;
+          var x = typeof a.x === 'number' ? Math.abs(a.x) : 0;
+          var y = typeof a.y === 'number' ? Math.abs(a.y) : 0;
+          var z = typeof a.z === 'number' ? Math.abs(a.z) : 0;
+          if (x + y + z > 0.2) finish(true, 'Motion samples received.');
+        }
+        window.addEventListener('devicemotion', onMotion);
+        setTimeout(function() {
+          finish(false, 'No motion event detected. Move the phone and retry.');
+        }, 3500);
+      });
+    }).catch(function(err) {
+      setFeatureCheckResult('motion', 'fail', 'Motion check failed: ' + featureErrorText(err));
+      return false;
+    });
+  }
+
+  function runBeepV80FeatureCheck() {
+    setFeatureCheckResult('beep_v80', 'running', 'Playing beep at 80%...');
+    return new Promise(function(resolve) {
+      var done = false;
+      function finish(ok, msg) {
+        if (done) return;
+        done = true;
+        setFeatureCheckResult('beep_v80', ok ? 'pass' : 'fail', msg);
+        resolve(ok);
+      }
+      try {
+        playBeep(0.8, 500, function() { finish(true, 'Played beep variant near v80.'); });
+        setTimeout(function() {
+          finish(false, 'No playback callback received (check native audio setup).');
+        }, 2500);
+      } catch (err) {
+        finish(false, 'Beep test failed: ' + featureErrorText(err));
+      }
+    });
+  }
+
+  function runAllFeatureChecks() {
+    return runMicrophoneFeatureCheck()
+      .then(function() { return runVibrationFeatureCheck(); })
+      .then(function() { return runFlashlightFeatureCheck(); })
+      .then(function() { return runMotionFeatureCheck(); })
+      .then(function() { return runBeepV80FeatureCheck(); });
   }
 
   // Handles process motion per second.
@@ -4017,7 +4444,6 @@ function playFixedBeep75(durationMs, onEnded) {
     if (state.appStep !== 'training' && state.trainingActive) {
       stopTrainingPhase();
     }
-
     switch (state.appStep) {
       case -1: {
         container.appendChild(el('p', { className: 'text-title' }, ['Lab setup']));
@@ -4054,7 +4480,7 @@ function playFixedBeep75(durationMs, onEnded) {
         container.appendChild(el('p', { className: 'text-title' }, ['Study description']));
         var panel = el('div', { className: 'study-panel' }, []);
         panel.appendChild(el('p', { className: 'study-lead' }, [
-          'A lucid dream is a dream is a dream in which you know that you are dreaming. This study looks at whether sounds, lights, or gentle vibrations from your phone can help you have these lucid dreams more often.'
+          'A lucid dream is a dream in which you know that you are dreaming. This study looks at whether sounds, lights, or gentle vibrations from your phone can help you have these lucid dreams more often.'
         ]));
         panel.appendChild(el('p', { className: 'study-section-title', style: { marginTop: '12px' } }, ['Instructions']));
         panel.appendChild(el('p', { className: 'study-section-body' }, [
@@ -4109,8 +4535,42 @@ function playFixedBeep75(durationMs, onEnded) {
             var chunks = [];
             var startTs = 0;
             var durationInterval = null;
+            var usingNativeVoiceRecorder = false;
+            var VR = getVoiceRecorderPlugin();
+            function resetRecordButtons() {
+              var rb = document.getElementById('voiceRecBtn');
+              var sb = document.getElementById('voiceStopBtn');
+              if (rb) rb.style.display = '';
+              if (sb) sb.style.display = 'none';
+            }
+            function saveRecordedBlob(blob, durationMs) {
+              if (durationMs != null && durationMs < VOICE_RECORD_MIN_MS) {
+                showSnackbar('Record at least 2 seconds.');
+                resetRecordButtons();
+                return;
+              }
+              if (durationMs != null && durationMs > VOICE_RECORD_MAX_MS + 50) {
+                showSnackbar('Recording must be 4 seconds maximum.');
+                resetRecordButtons();
+                return;
+              }
+              setVoiceBlob(state.pid, blob, function(ok) {
+                if (ok) {
+                  state.hasVoiceRecording = true;
+                  state.appStep = 2;
+                } else showSnackbar('Could not save recording.');
+                render();
+              });
+            }
             function showMicrophonePermissionHelp(err) {
-              showSnackbar('Microphone access denied. Open your phone Settings > LuciDreams and enable Microphone, then come back and tap Record again.', 30000);
+              var diag = buildMicDiagnostic(err, 'n/a', 'n/a', 'record_step');
+              window.luciLastMicDiag = diag;
+              var name = err && err.name ? String(err.name) : '';
+              if (name === 'NotReadableError') {
+                showSnackbar('Microphone is busy/unavailable. ' + diag, 30000);
+                return;
+              }
+              showSnackbar('Microphone access denied or blocked. ' + diag, 30000);
             }
             // Updates duration.
             function updateDuration() {
@@ -4124,44 +4584,80 @@ function playFixedBeep75(durationMs, onEnded) {
             function stopRecording() {
               if (durationInterval) clearInterval(durationInterval);
               durationInterval = null;
+              if (usingNativeVoiceRecorder && VR && typeof VR.stopRecording === 'function') {
+                VR.stopRecording().then(function(rec) {
+                  usingNativeVoiceRecorder = false;
+                  var value = rec && rec.value ? rec.value : rec;
+                  if (!value || !value.recordDataBase64) {
+                    showSnackbar('Native recorder returned empty audio data.', 10000);
+                    resetRecordButtons();
+                    return;
+                  }
+                  var mime = value.mimeType || 'audio/aac';
+                  var blob = base64ToBlob(value.recordDataBase64, mime);
+                  var durationMs = value.msDuration != null ? Number(value.msDuration) : null;
+                  saveRecordedBlob(blob, durationMs);
+                }).catch(function(err) {
+                  usingNativeVoiceRecorder = false;
+                  showSnackbar('Stop native recording failed: ' + buildMicDiagnostic(err, 'native_plugin', 'native_plugin', 'voice_recorder_stop'), 10000);
+                  resetRecordButtons();
+                });
+                return;
+              }
               if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
             }
             // Handles on record click.
             function onRecordClick() {
+              if (USE_NATIVE_VOICE_RECORDER_PLUGIN && isNativeAndroidPlatform() && VR) {
+                var rb0 = document.getElementById('voiceRecBtn');
+                var sb0 = document.getElementById('voiceStopBtn');
+                if (rb0) rb0.style.display = 'none';
+                if (sb0) sb0.style.display = '';
+                VR.requestAudioRecordingPermission()
+                  .then(function(perm) {
+                    if (!perm || !perm.value) throw new Error('MISSING_PERMISSION');
+                    return VR.startRecording();
+                  })
+                  .then(function() {
+                    usingNativeVoiceRecorder = true;
+                    startTs = Date.now();
+                    durationInterval = setInterval(updateDuration, 200);
+                  })
+                  .catch(function(err) {
+                    usingNativeVoiceRecorder = false;
+                    showSnackbar('Native recorder start failed: ' + buildMicDiagnostic(err, 'native_plugin', 'native_plugin', 'voice_recorder_start'), 12000);
+                    resetRecordButtons();
+                  });
+                return;
+              }
+              if (USE_ANDROID_NATIVE_AUDIO_PICKER_PRIMARY && isNativeAndroidPlatform()) {
+                showSnackbar('Opening Android voice recorder...', 2500);
+                captureAudioWithAndroidPicker().then(function(blob) {
+                  return getBlobDurationMs(blob).then(function(durationMs) {
+                    if (durationMs == null) {
+                      showSnackbar('Could not read recording length. Keep clips between 2 and 4 seconds.', 7000);
+                    }
+                    saveRecordedBlob(blob, durationMs);
+                  });
+                }).catch(function(err) {
+                  showSnackbar('Android recorder failed: ' + buildMicDiagnostic(err, 'picker', 'picker', 'record_step_picker'), 12000);
+                  resetRecordButtons();
+                });
+                return;
+              }
               if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 showSnackbar('Microphone not supported.');
                 return;
               }
-              navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+              acquireMicrophoneStream().then(function(stream) {
                 mediaRecorder = new MediaRecorder(stream);
                 chunks = [];
                 mediaRecorder.ondataavailable = function(e) { if (e.data.size) chunks.push(e.data); };
                 mediaRecorder.onstop = function() {
                   stream.getTracks().forEach(function(t) { t.stop(); });
                   var durationMs = Date.now() - startTs;
-                  if (durationMs < VOICE_RECORD_MIN_MS) {
-                    showSnackbar('Record at least 2 seconds.');
-                    var rb = document.getElementById('voiceRecBtn');
-                    var sb = document.getElementById('voiceStopBtn');
-                    if (rb) rb.style.display = '';
-                    if (sb) sb.style.display = 'none';
-                    return;
-                  }
-                  if (durationMs > VOICE_RECORD_MAX_MS + 50) {
-                    showSnackbar('Recording must be 4 seconds maximum.');
-                    var rb = document.getElementById('voiceRecBtn');
-                    var sb = document.getElementById('voiceStopBtn');
-                    if (rb) rb.style.display = '';
-                    if (sb) sb.style.display = 'none';
-                    return;
-                  }
                   var blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-                  setVoiceBlob(state.pid, blob, function(ok) {
-                    if (ok) {
-                      state.hasVoiceRecording = true;
-                    } else showSnackbar('Could not save recording.');
-                    render();
-                  });
+                  saveRecordedBlob(blob, durationMs);
                 };
                 mediaRecorder.start();
                 startTs = Date.now();
@@ -4171,7 +4667,23 @@ function playFixedBeep75(durationMs, onEnded) {
                 if (rb) rb.style.display = 'none';
                 if (sb) sb.style.display = '';
               }).catch(function(err) {
+                if (isNativeAndroidPlatform() && err && err.name === 'NotReadableError') {
+                  showSnackbar('Web microphone failed, opening Android recorder fallback...', 4000);
+                  captureAudioWithAndroidPicker().then(function(blob) {
+                    return getBlobDurationMs(blob).then(function(durationMs) {
+                      if (durationMs == null) {
+                        showSnackbar('Could not read recording length. Keep clips between 2 and 4 seconds.', 7000);
+                      }
+                      saveRecordedBlob(blob, durationMs);
+                    });
+                  }).catch(function(fallbackErr) {
+                    showSnackbar('Android recorder fallback failed: ' + featureErrorText(fallbackErr), 10000);
+                    resetRecordButtons();
+                  });
+                  return;
+                }
                 showMicrophonePermissionHelp(err);
+                resetRecordButtons();
               });
             }
             // Handles on stop click.
@@ -4190,15 +4702,8 @@ function playFixedBeep75(durationMs, onEnded) {
         ]));
         var controls = document.createElement('div');
         controls.className = 'training-controls';
-        var restartBtn = el('button', { className: 'icon-btn icon-btn-white', title: 'Restart from intro', onClick: restartTrainingFromBeginning }, ['↺']);
         var wave = el('div', { className: 'training-wave' });
-        var pauseGlyph = state.trainingPaused
-          ? el('span', { className: 'play-glyph' }, [])
-          : el('span', { className: 'pause-glyph' }, [el('span', { className: 'bar' }, []), el('span', { className: 'bar' }, [])]);
-        var pauseBtn = el('button', { className: 'icon-btn icon-btn-red', title: state.trainingPaused ? 'Resume training' : 'Pause training', onClick: toggleTrainingPause }, [pauseGlyph]);
-        controls.appendChild(restartBtn);
         controls.appendChild(wave);
-        controls.appendChild(pauseBtn);
         container.appendChild(controls);
         var remaining = Math.max(0, state.trainingRemainingSec || 0);
         var min = Math.floor(remaining / 60);

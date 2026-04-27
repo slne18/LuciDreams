@@ -28,6 +28,10 @@ EEG_PLOTS_DIR = os.path.join(BASE_DIR, "eeg_plots")
 DEFAULT_OUTPUT_TEMPLATE = os.path.join(EEG_PLOTS_DIR, "eeg_rem_phases_{pid}.png")
 SECONDS_PER_DAY = 24 * 3600
 LOWPASS_HZ = 40.0
+POWER_BAND_LOW_HZ = 30.0
+POWER_BAND_HIGH_HZ = 90.0
+POWER_LOG_EPS = 1e-12
+POWER_SMOOTH_SEC = 30.0
 
 
 def sec_of_day_to_elapsed(sec_of_day: float, ref_sec_of_day: float) -> float:
@@ -131,6 +135,29 @@ def lowpass_filter(series: pd.Series, fs_hz: float, cutoff_hz: float) -> pd.Seri
     return pd.Series(filt, index=series.index)
 
 
+def band_hilbert_power(series: pd.Series, fs_hz: float, low_hz: float, high_hz: float) -> pd.Series:
+    vals = pd.to_numeric(series, errors="coerce").astype(float).to_numpy()
+    finite = np.isfinite(vals)
+    if finite.sum() < 10:
+        return pd.Series(np.full_like(vals, np.nan, dtype=float), index=series.index)
+    idx = np.arange(len(vals))
+    interp = np.interp(idx, idx[finite], vals[finite])
+    try:
+        from scipy import signal
+    except Exception:
+        return pd.Series(np.full_like(vals, np.nan, dtype=float), index=series.index)
+    nyq = fs_hz * 0.5
+    lo = max(0.001, min(float(low_hz), nyq * 0.95))
+    hi = max(0.001, min(float(high_hz), nyq * 0.95))
+    if hi <= lo:
+        return pd.Series(np.full_like(vals, np.nan, dtype=float), index=series.index)
+    b_bp, a_bp = signal.butter(4, [lo, hi], btype="bandpass", fs=float(fs_hz))
+    bp = signal.filtfilt(b_bp, a_bp, interp, method="pad")
+    power = np.abs(signal.hilbert(bp)) ** 2
+    power[~finite] = np.nan
+    return pd.Series(power, index=series.index)
+
+
 def choose_rem_session(
     rem_df: pd.DataFrame,
     pid: str,
@@ -196,16 +223,30 @@ def main() -> None:
                 ext = ".png"
             overview_output_png = f"{root}_overview{ext}"
             per_rem_output_png = f"{root}_per_rem{ext}"
+            power_overview_output_png = f"{root}_power_overview{ext}"
+            power_per_rem_output_png = f"{root}_power_per_rem{ext}"
         else:
             overview_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_overview_{args.pid}{night_suffix}.png")
             per_rem_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_rem_per_rem_{args.pid}{night_suffix}.png")
+            power_overview_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_power_30_90_overview_{args.pid}{night_suffix}.png")
+            power_per_rem_output_png = os.path.join(EEG_PLOTS_DIR, f"eeg_power_30_90_per_rem_{args.pid}{night_suffix}.png")
     elif args.plot_mode == "overview":
         overview_output_png = output_png
         per_rem_output_png = None
+        root, ext = os.path.splitext(output_png)
+        if not ext:
+            ext = ".png"
+        power_overview_output_png = f"{root}_power{ext}"
+        power_per_rem_output_png = None
     else:
         overview_output_png = None
         per_rem_output_png = output_png
-    output_targets = [x for x in [overview_output_png, per_rem_output_png] if x]
+        root, ext = os.path.splitext(output_png)
+        if not ext:
+            ext = ".png"
+        power_overview_output_png = None
+        power_per_rem_output_png = f"{root}_power{ext}"
+    output_targets = [x for x in [overview_output_png, per_rem_output_png, power_overview_output_png, power_per_rem_output_png] if x]
     for target in output_targets:
         out_dir = os.path.dirname(target)
         if out_dir:
@@ -279,6 +320,20 @@ def main() -> None:
     eeg["RAW_AF8"] = pd.to_numeric(eeg["RAW_AF8"], errors="coerce")
     eeg = eeg.dropna(subset=["RAW_AF7", "RAW_AF8"]).copy()
     fs_hz = estimate_sampling_hz(eeg["TimeStamp"])
+    if fs_hz is not None and fs_hz > 2.5:
+        eeg["AF7_POWER_BAND"] = band_hilbert_power(eeg["RAW_AF7"], fs_hz, POWER_BAND_LOW_HZ, POWER_BAND_HIGH_HZ)
+        eeg["AF8_POWER_BAND"] = band_hilbert_power(eeg["RAW_AF8"], fs_hz, POWER_BAND_LOW_HZ, POWER_BAND_HIGH_HZ)
+    else:
+        eeg["AF7_POWER_BAND"] = np.nan
+        eeg["AF8_POWER_BAND"] = np.nan
+    eeg["AF7_POWER_LOG"] = np.log10(eeg["AF7_POWER_BAND"] + POWER_LOG_EPS)
+    eeg["AF8_POWER_LOG"] = np.log10(eeg["AF8_POWER_BAND"] + POWER_LOG_EPS)
+    if fs_hz is not None and fs_hz > 0:
+        win_n = max(1, int(round(float(fs_hz) * POWER_SMOOTH_SEC)))
+    else:
+        win_n = 1
+    eeg["AF7_POWER_LOG_SMOOTH"] = eeg["AF7_POWER_LOG"].rolling(window=win_n, center=True, min_periods=1).mean()
+    eeg["AF8_POWER_LOG_SMOOTH"] = eeg["AF8_POWER_LOG"].rolling(window=win_n, center=True, min_periods=1).mean()
     if fs_hz is not None and fs_hz > 2.5:
         eeg["RAW_AF7"] = lowpass_filter(eeg["RAW_AF7"], fs_hz, LOWPASS_HZ)
         eeg["RAW_AF8"] = lowpass_filter(eeg["RAW_AF8"], fs_hz, LOWPASS_HZ)
@@ -381,6 +436,50 @@ def main() -> None:
         print(f"REM rows considered: {len(rem_df)}")
         print(f"Session points plotted: {len(sess)}")
         plt.close(fig)
+
+        # Power overview (30-90 Hz band-pass + |Hilbert|^2, log-power, 30s smoothing)
+        fig_p, ax_p = plt.subplots(figsize=(18, 7))
+        ax_p.plot(sess["elapsed_sec"], sess["AF7_POWER_LOG_SMOOTH"], color="tab:blue", linewidth=0.8, alpha=0.9, label="AF7 log-power (30-90Hz)")
+        ax_p.plot(sess["elapsed_sec"], sess["AF8_POWER_LOG_SMOOTH"], color="tab:orange", linewidth=0.8, alpha=0.9, label="AF8 log-power (30-90Hz)")
+        first_rem_label = True
+        first_rem_start_label = True
+        first_rem_end_label = True
+        for _, ep in rem_df.iterrows():
+            start_sod = parse_hms_to_seconds(str(ep.get("episode_start_boston", "")))
+            end_sod = parse_hms_to_seconds(str(ep.get("episode_end_boston", "")))
+            if start_sod is None or end_sod is None:
+                continue
+            rem_start_x = sec_of_day_to_elapsed(start_sod, session_start_sod)
+            rem_end_x = sec_of_day_to_elapsed(end_sod, session_start_sod)
+            ax_p.axvspan(rem_start_x, rem_end_x, alpha=0.12, color="tab:orange", label="REM window" if first_rem_label else None)
+            first_rem_label = False
+            ax_p.axvline(rem_start_x, color="yellow", linestyle="--", linewidth=0.9, alpha=0.9, label="REM start" if first_rem_start_label else None)
+            ax_p.axvline(rem_end_x, color="black", linestyle="--", linewidth=0.9, alpha=0.9, label="REM end" if first_rem_end_label else None)
+            first_rem_start_label = False
+            first_rem_end_label = False
+        for _, c in cues_sess.iterrows():
+            cue_sod = c.get("event_sod")
+            if pd.isna(cue_sod):
+                continue
+            cue_x = sec_of_day_to_elapsed(float(cue_sod), session_start_sod)
+            ct = str(c.get("cue_type", "cue"))
+            ax_p.axvline(cue_x, color=cue_color.get(ct, "tab:purple"), linestyle=":", linewidth=0.8, alpha=0.7)
+        total_sec = int(sess["elapsed_sec"].max()) if not sess.empty else 0
+        tick_step = 30 * 60
+        ticks = np.arange(0, max(total_sec + tick_step, tick_step), tick_step)
+        ax_p.set_xticks(ticks)
+        ax_p.set_xticklabels([format_elapsed_hms(t)[:5] for t in ticks], rotation=0)
+        ax_p.set_title(
+            f"EEG log-power overview (30-90Hz, |Hilbert|^2, 30s smooth) | pid={args.pid} | night={args.night_number} | start={session_start_hms}"
+        )
+        ax_p.set_xlabel("Elapsed from session start (HH:MM)")
+        ax_p.set_ylabel("log10(power)")
+        ax_p.grid(True, alpha=0.25)
+        ax_p.legend(loc="upper right", fontsize=8)
+        fig_p.tight_layout()
+        fig_p.savefig(power_overview_output_png, dpi=120)
+        print(f"Saved plot to {power_overview_output_png}")
+        plt.close(fig_p)
 
     if args.plot_mode in ("per-rem", "both"):
         rem_plot_df = rem_df.copy()
@@ -490,6 +589,102 @@ def main() -> None:
             print(f"REM rows considered: {len(rem_df)}")
             print(f"REM panels requested: {len(rem_df)}")
             plt.close(fig)
+
+            # Power per-REM (30-90 Hz band-pass + |Hilbert|^2, log-power, 30s smoothing)
+            fig_pow, axes_pow = plt.subplots(nrows, ncols, figsize=(16, max(4.0 * nrows, 5)))
+            try:
+                axes_pow = axes_pow.flatten()
+            except Exception:
+                axes_pow = [axes_pow]
+            plotted_count_pow = 0
+            for i, (_, ep) in enumerate(rem_plot_df.iterrows()):
+                ax = axes_pow[i]
+                ep_idx = int(ep["episode_index"])
+                start_sod = parse_hms_to_seconds(str(ep.get("episode_start_boston", "")))
+                end_sod = parse_hms_to_seconds(str(ep.get("episode_end_boston", "")))
+                if start_sod is None or end_sod is None:
+                    ax.text(0.5, 0.5, f"REM #{ep_idx}: invalid times", transform=ax.transAxes, ha="center", va="center")
+                    ax.axis("off")
+                    continue
+                rem_start_x = sec_of_day_to_elapsed(start_sod, session_start_sod)
+                rem_end_x = sec_of_day_to_elapsed(end_sod, session_start_sod)
+                cues_ep = cues_sess[cues_sess["episode_index"] == ep_idx].copy()
+                cue_abs_times = []
+                for _, c in cues_ep.iterrows():
+                    cue_sod = c.get("event_sod")
+                    if pd.isna(cue_sod):
+                        continue
+                    cue_abs_times.append(sec_of_day_to_elapsed(float(cue_sod), session_start_sod))
+                base_start = rem_start_x
+                base_end = rem_end_x
+                if cue_abs_times:
+                    base_start = min(base_start, min(cue_abs_times))
+                    base_end = max(base_end, max(cue_abs_times))
+                win_start_x = max(0, base_start - max(0, args.per_rem_pre_sec))
+                win_end_x = min(float(sess["elapsed_sec"].max()), base_end + max(0, args.per_rem_post_sec))
+                seg = sess[(sess["elapsed_sec"] >= win_start_x) & (sess["elapsed_sec"] <= win_end_x)].copy()
+                if seg.empty:
+                    ax.text(0.5, 0.5, f"REM #{ep_idx}: no EEG data", transform=ax.transAxes, ha="center", va="center")
+                    ax.axis("off")
+                    continue
+                plotted_count_pow += 1
+                relx = seg["elapsed_sec"] - win_start_x
+                ax.plot(relx, seg["AF7_POWER_LOG_SMOOTH"], color="tab:blue", linewidth=0.9, alpha=0.9, label="AF7 log-power (30-90Hz)")
+                ax.plot(relx, seg["AF8_POWER_LOG_SMOOTH"], color="tab:orange", linewidth=0.9, alpha=0.9, label="AF8 log-power (30-90Hz)")
+                rem_start_rel = rem_start_x - win_start_x
+                rem_end_rel = rem_end_x - win_start_x
+                ax.axvspan(rem_start_rel, rem_end_rel, alpha=0.12, color="tab:orange", label="REM window")
+                ax.axvline(rem_start_rel, color="yellow", linestyle="--", linewidth=0.9, alpha=0.95, label="REM start")
+                ax.axvline(rem_end_rel, color="black", linestyle="--", linewidth=0.9, alpha=0.95, label="REM end")
+                first_disruptive = True
+                first_induction = True
+                for _, c in cues_ep.iterrows():
+                    cue_sod = c.get("event_sod")
+                    if pd.isna(cue_sod):
+                        continue
+                    cue_abs = sec_of_day_to_elapsed(float(cue_sod), session_start_sod)
+                    cue_x = cue_abs - win_start_x
+                    if cue_abs < win_start_x or cue_abs > win_end_x:
+                        continue
+                    ct = str(c.get("cue_type", "cue"))
+                    col = cue_color.get(ct, "tab:purple")
+                    tr_idx = c.get("train_index")
+                    tr_suffix = ""
+                    if not pd.isna(tr_idx):
+                        tr_suffix = f" (train {int(tr_idx)})"
+                    cue_label = None
+                    if ct == "disruptive" and first_disruptive:
+                        cue_label = "Disruptive cue" + tr_suffix
+                        first_disruptive = False
+                    elif ct == "induction" and first_induction:
+                        cue_label = "Induction cue" + tr_suffix
+                        first_induction = False
+                    ax.axvline(cue_x, color=col, linestyle=":", linewidth=0.9, alpha=0.85, label=cue_label)
+                dur = max(1, int(round(win_end_x - win_start_x)))
+                step = 30
+                ticks = np.arange(0, dur + step, step)
+                ax.set_xticks(ticks)
+                ax.set_xticklabels(
+                    [seconds_to_hms_wrapped(session_start_sod + win_start_x + t) for t in ticks],
+                    fontsize=8,
+                    rotation=25,
+                    ha="right",
+                )
+                ax.set_title(f"REM #{ep_idx} | {ep.get('episode_start_boston','')} -> {ep.get('episode_end_boston','')}", fontsize=9)
+                ax.set_xlabel("Clock time (Boston)")
+                ax.set_ylabel("log10(power)")
+                ax.grid(True, alpha=0.25)
+                ax.legend(loc="upper right", fontsize=7)
+            for j in range(len(rem_plot_df), len(axes_pow)):
+                axes_pow[j].axis("off")
+            fig_pow.suptitle(
+                f"EEG log-power per REM phase (30-90Hz, |Hilbert|^2, 30s smooth) | pid={args.pid} | night={args.night_number} | session_start={session_start_hms} | plotted={plotted_count_pow}/{len(rem_plot_df)}",
+                fontsize=11,
+            )
+            fig_pow.tight_layout(rect=[0, 0, 1, 0.97])
+            fig_pow.savefig(power_per_rem_output_png, dpi=120)
+            print(f"Saved plot to {power_per_rem_output_png}")
+            plt.close(fig_pow)
 
 
 if __name__ == "__main__":

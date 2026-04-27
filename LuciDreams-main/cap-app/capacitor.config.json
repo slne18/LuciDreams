@@ -9,6 +9,7 @@
   "packageClassList": [
     "NativeAudio",
     "VolumeButtonsPlugin",
+    "VoiceRecorder",
     "FilesystemPlugin",
     "HapticsPlugin",
     "TorchPlugin",
