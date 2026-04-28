@@ -791,7 +791,7 @@
   const DISRUPTIVE_WAVE_VOLUME = 0.15;            // theta/gamma disruptive wave volume fixed at 15%
   const DISRUPTIVE_THETA_ASSET = 'theta.mp3';
   const DISRUPTIVE_GAMMA_ASSET = 'gamma.mp3';
-  const FIXED_BEEP_75_TRAINING_ASSET_ID = 'beep_v90';
+  const FIXED_BEEP_75_TRAINING_ASSET_ID = 'beep_v25';
   const FIXED_BEEP_75_ASSET_ID = 'beep_v75';
   const DISRUPTIVE_LIGHT_OFFSET_MS = 90000;   // 1m30 after train start
   const DISRUPTIVE_LIGHT_DURATION_MS = 30000; // 30s at 100%
@@ -1852,7 +1852,7 @@
     var c = state.tonight_condition;
     // Condition 4 uses recorded voice; every other condition uses beep.
     if (c === 4) {
-      playOwnVoiceAtStep(75, onEnded);
+      playOwnVoiceAtStep(25, onEnded);
       return;
     }
     playFixedBeep75Training(LD_BEEP_DURATION_MS, onEnded);
@@ -2123,17 +2123,17 @@
     var Cap = window.Capacitor;
     var NA = Cap && Cap.Plugins && Cap.Plugins.NativeAudio;
     if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform() || !NA) {
-      playBeep(0.9, durationMs, onEnded);
+      playBeep(0.25, durationMs, onEnded);
       return;
     }
     ensureNativeBeepPreloaded().then(function(ok) {
       if (!ok) {
-        playBeep(0.9, durationMs, onEnded);
+        playBeep(0.25, durationMs, onEnded);
         return;
       }
       ensureNativeBeepVariantsPreloaded().then(function(ready) {
         if (!ready) {
-          playBeep(0.9, durationMs, onEnded);
+          playBeep(0.25, durationMs, onEnded);
           return;
         }
         stopNativeBeepVariants(NA);
@@ -2146,13 +2146,13 @@
             }, durationMs);
           })
           .catch(function() {
-            playBeep(0.9, durationMs, onEnded);
+            playBeep(0.25, durationMs, onEnded);
           });
       }).catch(function() {
-        playBeep(0.9, durationMs, onEnded);
+        playBeep(0.25, durationMs, onEnded);
       });
     }).catch(function() {
-      playBeep(0.9, durationMs, onEnded);
+      playBeep(0.25, durationMs, onEnded);
     });
   }
 
@@ -4488,7 +4488,7 @@ function playFixedBeep75(durationMs, onEnded) {
         ]));
         panel.appendChild(el('p', { className: 'study-section-title' }, ['The goal']));
         panel.appendChild(el('p', { className: 'study-section-body' }, [
-          'During this time, the app will guide you through a mental exercise. You will learn how to associate those signals with a "lucid mindset"—learning to think clearly about what you are experiencing in the moment. You can allow yourself to fall asleep while the training is playing.'
+          'During this time, the app will guide you through a mental exercise. You will learn how to associate those signals with a "lucid mindset"—learning to think clearly about what you are experiencing in the moment. After the initial 5-minute guidance phase, you can allow yourself to fall asleep while the training is playing.'
         ]));
         panel.appendChild(el('p', { className: 'study-section-title' }, ['Waking up']));
         panel.appendChild(el('p', { className: 'study-section-body' }, [
