@@ -380,6 +380,8 @@
 
   var LAB_CONFIG_KEY = 'luci_lab_config';
   var DEFAULT_WAKE_SURVEY_URL = 'https://mit.co1.qualtrics.com/jfe/form/SV_6hVsZKvpEE4NNHM';
+  var luciConfigDebugSource = 'none';
+  var luciFirebaseInitError = '';
 
   (function applyConfigFromUrl() {
     var params = new URLSearchParams(window.location.search);
@@ -723,12 +725,17 @@
   // Returns effective firebase config.
   function getEffectiveFirebaseConfig() {
     if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
+      luciConfigDebugSource = 'bundled_static/firebase-config.js';
       return window.FIREBASE_CONFIG;
     }
     try {
       var stored = localStorage.getItem(LAB_CONFIG_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        luciConfigDebugSource = 'localStorage:luci_lab_config';
+        return JSON.parse(stored);
+      }
     } catch (e) {}
+    luciConfigDebugSource = 'none_or_invalid';
     return null;
   }
 
@@ -755,8 +762,13 @@
         console.warn('Firebase auth SDK not available; anonymous sign-in skipped.');
       }
       db = firebase.firestore();
+    } else if (effectiveConfig && typeof firebase === 'undefined') {
+      luciFirebaseInitError = 'firebase_sdk_unavailable';
     }
-  } catch (e) { console.warn('Firebase init:', e); }
+  } catch (e) {
+    luciFirebaseInitError = String((e && (e.code || e.message)) || e || 'firebase_init_failed');
+    console.warn('Firebase init:', e);
+  }
 
   // --- EXPERIMENT PARAMETERS ---
   const BUFFER_SIZE = 800;
@@ -824,6 +836,7 @@
   const TRAINING_CUE_WATCHDOG_MS = 45000;
   const TRAINING_INTRO_ASSET = 'sounds/training_intro.mp3';
   const TRAINING_GUIDANCE_ASSET = 'sounds/training_guidance.mp3';
+  const ANDROID_TILT_WEIGHT = 0.15;
   const CONDITION_LABELS = {
     0: 'Control',
     1: 'Sound+Bip',
@@ -860,6 +873,8 @@
     totalHistory: [],
     soundLog: [],
     motionSamplesForBackend: [],
+    motionDeltaOnlySamplesForBackend: [],
+    motionDeltaPlusTilt15SamplesForBackend: [],
     rawSensorSamples: [],
     remEpisodes: [],
     smoothedMotionSeries: [],
@@ -898,10 +913,6 @@
     consecutive_seconds_above_threshold: 0,
     userMinVolume: null,
     baselineSliderVolume: 0.1,
-    observedSystemVolume: null,
-    baselineSetObservedSystemVolume: null,
-    volumeWatchPollId: null,
-    volumeListenerHandle: null,
     tonight_condition: null,
     hasVoiceRecording: false,
     // Arousal threshold (sound 0-1) from LD induction, persisted across nights
@@ -3012,118 +3023,12 @@ function playFixedBeep75(durationMs, onEnded) {
     });
   }
 
-  // Returns plugin that exposes actual system volume (Control Center value).
-  function getSystemVolumePlugin() {
-    var Cap = window.Capacitor;
-    var Plugins = Cap && Cap.Plugins;
-    if (Plugins) {
-      if (Plugins.SystemVolume) return Plugins.SystemVolume;
-      if (Plugins.SystemVolumePlugin) return Plugins.SystemVolumePlugin;
-      if (Plugins.VolumeControl) return Plugins.VolumeControl;
-    }
-    // Capacitor v6+ custom plugins often require explicit JS proxy registration.
-    if (Cap && typeof Cap.registerPlugin === 'function') {
-      if (!window.luciSystemVolumeProxy) {
-        try { window.luciSystemVolumeProxy = Cap.registerPlugin('SystemVolume'); } catch (e) { window.luciSystemVolumeProxy = null; }
-      }
-      if (window.luciSystemVolumeProxy) return window.luciSystemVolumeProxy;
-    }
-    return null;
-  }
-
-  function normalizeSystemVolumeValue(v) {
-    if (v == null) return null;
-    if (typeof v === 'string' && v.trim() === '') return null;
-    var n = Number(v);
-    if (!isFinite(n)) return null;
-    if (n > 1.0001 && n <= 100) n = n / 100;
-    if (n < 0) n = 0;
-    if (n > 1) n = 1;
-    return n;
-  }
-
-  function updateObservedSystemVolume(v) {
-    var normalized = normalizeSystemVolumeValue(v);
-    if (normalized == null) return false;
-    state.observedSystemVolume = normalized;
-    state.baselineSetObservedSystemVolume = normalized;
-    return true;
-  }
-
-  function fetchCurrentSystemVolume() {
-    var VP = getSystemVolumePlugin();
-    if (!VP) return Promise.resolve(null);
-    if (typeof VP.getCurrentSystemVolume === 'function') {
-      return VP.getCurrentSystemVolume().then(function(res) {
-        if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
-        if (res && typeof res.volume === 'number') return normalizeSystemVolumeValue(res.volume);
-        if (typeof res === 'number') return normalizeSystemVolumeValue(res);
-        return null;
-      }).catch(function() { return null; });
-    }
-    if (typeof VP.getVolume === 'function') {
-      return VP.getVolume().then(function(res) {
-        if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
-        if (res && typeof res.volume === 'number') return normalizeSystemVolumeValue(res.volume);
-        if (typeof res === 'number') return normalizeSystemVolumeValue(res);
-        return null;
-      }).catch(function() { return null; });
-    }
-    if (typeof VP.getCurrentVolume === 'function') {
-      return VP.getCurrentVolume().then(function(res) {
-        if (res && typeof res.value === 'number') return normalizeSystemVolumeValue(res.value);
-        if (res && typeof res.volume === 'number') return normalizeSystemVolumeValue(res.volume);
-        if (typeof res === 'number') return normalizeSystemVolumeValue(res);
-        return null;
-      }).catch(function() { return null; });
-    }
-    return Promise.resolve(null);
-  }
-
-  function delayMs(ms) {
-    return new Promise(function(resolve) { setTimeout(resolve, ms); });
-  }
-
-  // For wake-final export: perform multiple spaced reads and keep latest non-null sample.
-  function fetchFreshSystemVolumeForSend() {
-    var latest = null;
-    return fetchCurrentSystemVolume()
-      .then(function(v1) {
-        if (normalizeSystemVolumeValue(v1) != null) latest = normalizeSystemVolumeValue(v1);
-        return delayMs(250);
-      })
-      .then(function() { return fetchCurrentSystemVolume(); })
-      .then(function(v2) {
-        if (normalizeSystemVolumeValue(v2) != null) latest = normalizeSystemVolumeValue(v2);
-        return delayMs(400);
-      })
-      .then(function() { return fetchCurrentSystemVolume(); })
-      .then(function(v3) {
-        if (normalizeSystemVolumeValue(v3) != null) latest = normalizeSystemVolumeValue(v3);
-        return latest;
-      })
-      .catch(function() { return latest; });
-  }
-
-  // Clears volume watch.
-  function clearVolumeWatch() {
-    var VP = getSystemVolumePlugin();
-    if (state.volumeWatchPollId) {
-      clearInterval(state.volumeWatchPollId);
-      state.volumeWatchPollId = null;
-    }
-    if (VP && VP.clearWatch) VP.clearWatch().catch(function() {});
-    if (VP && VP.removeAllListeners) VP.removeAllListeners().catch(function() {});
-    state._volumeWatchActive = false;
-  }
-
   // Sets baseline.
   function setBaseline() {
     var v = Math.max(0.01, Math.min(1, parseFloat(state.baselineSliderVolume) || 0.1));
     state.userMinVolume = v;
     state.titrationCeiling = Math.min(1, v + USER_MIN_VOLUME_CEILING_DELTA);
     state.finalSleepVolume = v;
-    state.baselineSetObservedSystemVolume = state.observedSystemVolume != null ? state.observedSystemVolume : state.baselineSetObservedSystemVolume;
     saveBaselineVolume(state.pid, v);
     state.appStep = 4;
     render();
@@ -3164,6 +3069,8 @@ function playFixedBeep75(durationMs, onEnded) {
     state.appStep = targetStep || 5;
     state.motionThisSecond = 0;
     state.motionSamplesForBackend = [];
+    state.motionDeltaOnlySamplesForBackend = [];
+    state.motionDeltaPlusTilt15SamplesForBackend = [];
     state.secondsRecorded = 0;
     state.smoothedMotionSeries = [];
     state.rawMotionSeries = [];
@@ -3222,12 +3129,17 @@ function playFixedBeep75(durationMs, onEnded) {
     }
 
     state.motionSampleTimer = setInterval(function() {
-      let motion = state.motionThisSecond;
+      let deltaOnlyMotion = state.motionThisSecond;
       state.motionThisSecond = 0;
       let motionFromTilt = state.lastMagnitude < 2 ? state.lastMagnitude : Math.abs(state.lastMagnitude - 9.81);
-      motion = motion + motionFromTilt;
-      state.motionSamplesForBackend.push(motion);
-      processMotionPerSecond(motion);
+      let motionWithTilt15 = deltaOnlyMotion + (ANDROID_TILT_WEIGHT * motionFromTilt);
+      let legacyMotion = deltaOnlyMotion + motionFromTilt;
+      let platform = getCapacitorPlatform();
+      let remMotion = (platform === 'android') ? deltaOnlyMotion : legacyMotion;
+      if (platform !== 'android') state.motionDeltaOnlySamplesForBackend.push(deltaOnlyMotion);
+      if (platform === 'android') state.motionDeltaPlusTilt15SamplesForBackend.push(motionWithTilt15);
+      state.motionSamplesForBackend.push(remMotion);
+      processMotionPerSecond(remMotion);
     }, 1000);
 
     state.sleepStartTime = Date.now();
@@ -3450,7 +3362,7 @@ function playFixedBeep75(durationMs, onEnded) {
    * Returns { firestoreDoc, surveyData }. Firestore includes full rem_periods (episodes + nested trains).
    * surveyData adds flat trains + motionAvgs for Qualtrics URL (motion breakdowns not stored in Firestore).
    */
-  function buildSleepSessionPayload(activeMode, forcedUserSetPhoneVolume) {
+  function buildSleepSessionPayload(activeMode) {
     var rawEpisodes = state.remEpisodes.slice();
     var totalRemMinutes = rawEpisodes.reduce(function(sum, ep) { return sum + Math.round((ep.duration_sec || 0) / 60); }, 0);
     var motionAvgs = computeMotionAverages();
@@ -3500,8 +3412,15 @@ function playFixedBeep75(durationMs, onEnded) {
 
     var roll = computeStimulationRollups(rem_periods);
     var currentSeriesStillnessCutoff = getCurrentSeriesStillnessCutoff();
+    var platform = getCapacitorPlatform();
     // Persist per-second motion amount (not 80th-percentile cutoff series).
     var motionSeries = compactNumericSeries((state.motionSamplesForBackend || []).slice(), 3);
+    var motionDeltaOnlySeries = (platform !== 'android')
+      ? compactNumericSeries((state.motionDeltaOnlySamplesForBackend || []).slice(), 3)
+      : [];
+    var motionDeltaPlusTilt15Series = (platform === 'android')
+      ? compactNumericSeries((state.motionDeltaPlusTilt15SamplesForBackend || []).slice(), 3)
+      : [];
     // Also persist smoothed rolling-motion series used by REM logic.
     var smoothedMotionSeries = compactNumericSeries((state.smoothedMotionSeries || []).slice(), 3);
 
@@ -3526,9 +3445,7 @@ function playFixedBeep75(durationMs, onEnded) {
       native_api_status: buildNativeApiStatusObject(),
       night_max_trains: NIGHT_MAX_TRAINS,
       total_trains_delivered: roll.total_train_count,
-      app_version: 'luci2026',
-      // Strict rule: only persist a fresh reading captured at send time.
-      user_set_phone_volume: (forcedUserSetPhoneVolume != null) ? forcedUserSetPhoneVolume : null
+      app_version: 'luci2026'
     };
 
     var firestoreDoc = {
@@ -3541,6 +3458,14 @@ function playFixedBeep75(durationMs, onEnded) {
       smoothed_motion_series_json: JSON.stringify(smoothedMotionSeries),
       smoothed_motion_series_len: smoothedMotionSeries.length
     };
+    if (motionDeltaOnlySeries.length > 0) {
+      firestoreDoc.motion_delta_only_series_json = JSON.stringify(motionDeltaOnlySeries);
+      firestoreDoc.motion_delta_only_series_len = motionDeltaOnlySeries.length;
+    }
+    if (motionDeltaPlusTilt15Series.length > 0) {
+      firestoreDoc.motion_delta_plus_tilt15_series_json = JSON.stringify(motionDeltaPlusTilt15Series);
+      firestoreDoc.motion_delta_plus_tilt15_series_len = motionDeltaPlusTilt15Series.length;
+    }
 
     return {
       firestoreDoc: firestoreDoc,
@@ -3576,8 +3501,6 @@ function playFixedBeep75(durationMs, onEnded) {
     state.tonight_condition = null;
     state.appStep = 0;
     state._voiceCheckDone = false;
-    state.observedSystemVolume = null;
-    state.baselineSetObservedSystemVolume = null;
     render();
   }
 
@@ -3688,6 +3611,8 @@ function playFixedBeep75(durationMs, onEnded) {
     var next = Object.assign({}, doc || {});
     var changed = false;
     changed = compactSeriesJsonField(next, 'motion_per_second_series_json', 'motion_per_second_series_len', 3) || changed;
+    changed = compactSeriesJsonField(next, 'motion_delta_only_series_json', 'motion_delta_only_series_len', 3) || changed;
+    changed = compactSeriesJsonField(next, 'motion_delta_plus_tilt15_series_json', 'motion_delta_plus_tilt15_series_len', 3) || changed;
     changed = compactSeriesJsonField(next, 'smoothed_motion_series_json', 'smoothed_motion_series_len', 3) || changed;
     if (!changed) return doc;
     return next;
@@ -3712,9 +3637,11 @@ function playFixedBeep75(durationMs, onEnded) {
 
   function buildJsonSplitDocs(doc) {
     var motion = parseJsonArraySafe(doc && doc.motion_per_second_series_json);
+    var motionDeltaOnly = parseJsonArraySafe(doc && doc.motion_delta_only_series_json);
+    var motionDeltaPlusTilt15 = parseJsonArraySafe(doc && doc.motion_delta_plus_tilt15_series_json);
     var smooth = parseJsonArraySafe(doc && doc.smoothed_motion_series_json);
     var rem = parseJsonArraySafe(doc && doc.rem_periods_json);
-    if (!motion.length && !smooth.length && !rem.length) return null;
+    if (!motion.length && !motionDeltaOnly.length && !motionDeltaPlusTilt15.length && !smooth.length && !rem.length) return null;
 
     var groupId = generateSessionGroupId(doc && doc.participant_id);
     var maxParts = 12;
@@ -3723,6 +3650,8 @@ function playFixedBeep75(durationMs, onEnded) {
       var allFit = true;
       for (var i = 0; i < parts; i++) {
         var motionSlice = sliceByPart(motion, i, parts);
+        var motionDeltaOnlySlice = sliceByPart(motionDeltaOnly, i, parts);
+        var motionDeltaPlusTilt15Slice = sliceByPart(motionDeltaPlusTilt15, i, parts);
         var smoothSlice = sliceByPart(smooth, i, parts);
         var remSlice = sliceByPart(rem, i, parts);
         var outDoc;
@@ -3740,6 +3669,14 @@ function playFixedBeep75(durationMs, onEnded) {
             rem_periods_json: JSON.stringify(remSlice),
             rem_periods_count: remSlice.length
           });
+          if (motionDeltaOnly.length > 0) {
+            outDoc.motion_delta_only_series_json = JSON.stringify(motionDeltaOnlySlice);
+            outDoc.motion_delta_only_series_len = motionDeltaOnlySlice.length;
+          }
+          if (motionDeltaPlusTilt15.length > 0) {
+            outDoc.motion_delta_plus_tilt15_series_json = JSON.stringify(motionDeltaPlusTilt15Slice);
+            outDoc.motion_delta_plus_tilt15_series_len = motionDeltaPlusTilt15Slice.length;
+          }
         } else {
           outDoc = {
             participant_id: doc.participant_id,
@@ -3759,6 +3696,14 @@ function playFixedBeep75(durationMs, onEnded) {
             rem_periods_json: JSON.stringify(remSlice),
             rem_periods_count: remSlice.length
           };
+          if (motionDeltaOnly.length > 0) {
+            outDoc.motion_delta_only_series_json = JSON.stringify(motionDeltaOnlySlice);
+            outDoc.motion_delta_only_series_len = motionDeltaOnlySlice.length;
+          }
+          if (motionDeltaPlusTilt15.length > 0) {
+            outDoc.motion_delta_plus_tilt15_series_json = JSON.stringify(motionDeltaPlusTilt15Slice);
+            outDoc.motion_delta_plus_tilt15_series_len = motionDeltaPlusTilt15Slice.length;
+          }
         }
         var partSize = estimateDocSizeBytes(outDoc);
         if (partSize > FIRESTORE_DOC_SOFT_LIMIT_BYTES) {
@@ -4238,30 +4183,9 @@ function playFixedBeep75(durationMs, onEnded) {
   }
 
   // Sends sleep data.
-  function sendSleepData(activeMode, skipVolumeRefresh, forcedUserSetPhoneVolume) {
+  function sendSleepData(activeMode) {
     if (!state.pid) return;
-    if (!skipVolumeRefresh) {
-      // Clear any transient in-memory value; send only a fresh wake-time read.
-      state.observedSystemVolume = null;
-      state.baselineSetObservedSystemVolume = null;
-      fetchFreshSystemVolumeForSend().then(function(vNow) {
-        sendSleepData(activeMode, true, normalizeSystemVolumeValue(vNow));
-      }).catch(function() {
-        sendSleepData(activeMode, true, null);
-      });
-      return;
-    }
-
-    var finalForcedVolume = normalizeSystemVolumeValue(forcedUserSetPhoneVolume);
-    if (finalForcedVolume != null) {
-      updateObservedSystemVolume(finalForcedVolume);
-    } else if (arguments.length >= 3) {
-      // Explicit "no fresh reading" path: keep null rather than stale previous value.
-      state.observedSystemVolume = null;
-      state.baselineSetObservedSystemVolume = null;
-    }
-
-    var built = buildSleepSessionPayload(activeMode, finalForcedVolume);
+    var built = buildSleepSessionPayload(activeMode);
     var doc = built.firestoreDoc;
     var uploadDocs = buildFirestoreUploadDocs(doc);
     if (uploadDocs.length > 1) {
@@ -4296,6 +4220,8 @@ function playFixedBeep75(durationMs, onEnded) {
       return p
         .then(function() {
           state.motionSamplesForBackend = [];
+          state.motionDeltaOnlySamplesForBackend = [];
+          state.motionDeltaPlusTilt15SamplesForBackend = [];
           state.soundLog = [];
           console.log('Data synced to Firestore:', activeMode);
           return clearLocalSessionBackupSnapshot(state.pid).then(function() {
@@ -4348,7 +4274,6 @@ function playFixedBeep75(durationMs, onEnded) {
       state.currentRemEpisodeEntryThreshold = null;
     }
     disableNoSleep();
-    clearVolumeWatch();
     if (state.accelHandler) {
       window.removeEventListener('devicemotion', state.accelHandler);
       state.accelHandler = null;
@@ -4369,18 +4294,12 @@ function playFixedBeep75(durationMs, onEnded) {
     state.trainingSkipped = false;
     state.epochs = 0;
     state.totalStimCount = 0;
-    state.observedSystemVolume = null;
-    state.baselineSetObservedSystemVolume = null;
     render();
   }
 
   // Applies config data.
   function applyConfigData(pid) {
-    clearVolumeWatch();
     state.pid = pid;
-    // Start each login/night with a fresh volume capture to avoid stale reuse.
-    state.observedSystemVolume = null;
-    state.baselineSetObservedSystemVolume = null;
     state.beepDurationMs = DEFAULT_BEEP_DURATION_MS;
     state.intervalSeconds = 10;
     state.trainingSkipped = false;
@@ -4723,7 +4642,7 @@ function playFixedBeep75(durationMs, onEnded) {
         container.appendChild(el('p', { className: 'text-title', style: { color: 'var(--orange-accent)', fontWeight: 'bold' } }, ['IMPORTANT: Your screen must stay ON.']));
         container.appendChild(el('p', { className: 'text-body', style: { whiteSpace: 'pre-line' } }, ['1. Once started, Do NOT switch to another tab or app.\n2. Do NOT lock your phone.\n3. Do NOT close this browser tab.']));
         container.appendChild(el('p', { className: 'text-body', style: { color: '#d32f2f', fontWeight: '700', marginTop: '8px' } }, ['Set the volume to 50% (with the physical buttons or the Control Center slider).']));
-        container.appendChild(el('p', { className: 'text-body', style: { color: 'var(--orange-accent)', marginTop: '8px' } }, ['Keep the phone connected to a charging cable and enable Do Not Disturb mode.']));
+        container.appendChild(el('p', { className: 'text-body', style: { color: 'var(--orange-accent)', marginTop: '8px' } }, ['Keep the phone connected to a charging cable and WIFI, and enable Do Not Disturb mode.']));
         container.appendChild(el('div', { className: 'divider' }));
         if (needsMotionActivation) {
           container.appendChild(el('p', { className: 'text-body' }, ['We need to activate your device\'s motion sensor. To accept, click the button below.']));

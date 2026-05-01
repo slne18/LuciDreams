@@ -71,6 +71,23 @@ def epoch_to_boston_time(night_start_iso, epoch_sec, fallback_iso=None):
     return to_boston_time(fallback_iso)
 
 
+def load_series_from_doc(data, plain_key, json_key):
+    """Load list series from direct field or JSON-string companion field."""
+    series = data.get(plain_key, None)
+    if series is None:
+        series_json = data.get(json_key, None)
+        if isinstance(series_json, str) and series_json.strip():
+            try:
+                parsed = json.loads(series_json)
+                if isinstance(parsed, list):
+                    series = parsed
+            except Exception:
+                series = None
+    if not isinstance(series, list):
+        return []
+    return series
+
+
 def load_local_session_records(local_file):
     with open(local_file, "r", encoding="utf-8") as f:
         raw = f.read().strip()
@@ -267,20 +284,18 @@ def main():
 
         # New schema stores per-second motion amount at top level.
         # Keep backward compatibility with older nested schemas.
-        motion_series = data.get("motion_per_second_series", None)
-        if motion_series is None:
-            motion_json = data.get("motion_per_second_series_json", None)
-            if isinstance(motion_json, str) and motion_json.strip():
-                try:
-                    parsed = json.loads(motion_json)
-                    if isinstance(parsed, list):
-                        motion_series = parsed
-                except Exception:
-                    motion_series = None
+        motion_series = load_series_from_doc(data, "motion_per_second_series", "motion_per_second_series_json")
         if not motion_series:
             motion_series = rem_dynamic_thresholds.get("motion_per_second_series", None)
         if not motion_series:
             motion_series = rem_dynamic_thresholds.get("motion_80pct_cutoff_series", []) or []
+
+        motion_delta_only_series = load_series_from_doc(
+            data, "motion_delta_only_series", "motion_delta_only_series_json"
+        )
+        motion_delta_plus_tilt15_series = load_series_from_doc(
+            data, "motion_delta_plus_tilt15_series", "motion_delta_plus_tilt15_series_json"
+        )
 
         smoothed_series = data.get("smoothed_motion_series", None)
         if smoothed_series is None:
@@ -302,8 +317,20 @@ def main():
         total_trains = 0
         total_induction_cues = 0
 
-        for sec_idx, motion_value in enumerate(motion_series):
+        max_motion_len = max(
+            len(motion_series),
+            len(motion_delta_only_series),
+            len(motion_delta_plus_tilt15_series),
+        )
+        for sec_idx in range(max_motion_len):
             point_iso = iso_plus_seconds(night_start_iso, sec_idx)
+            motion_value = motion_series[sec_idx] if sec_idx < len(motion_series) else None
+            motion_delta_only_value = (
+                motion_delta_only_series[sec_idx] if sec_idx < len(motion_delta_only_series) else None
+            )
+            motion_delta_plus_tilt15_value = (
+                motion_delta_plus_tilt15_series[sec_idx] if sec_idx < len(motion_delta_plus_tilt15_series) else None
+            )
             motion_rows.append({
                 "pid": pid,
                 "night_number": night_number,
@@ -313,6 +340,8 @@ def main():
                 "epoch_sec": sec_idx,
                 "time_boston": to_boston_time(point_iso),
                 "motion_per_second": motion_value,
+                "motion_delta_only": motion_delta_only_value,
+                "motion_delta_plus_tilt15": motion_delta_plus_tilt15_value,
             })
 
         for sec_idx, smoothed_value in enumerate(smoothed_series):
@@ -467,6 +496,8 @@ def main():
             "epoch_sec",
             "time_boston",
             "motion_per_second",
+            "motion_delta_only",
+            "motion_delta_plus_tilt15",
         ]
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
