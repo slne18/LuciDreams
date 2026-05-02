@@ -808,7 +808,7 @@
   const DISRUPTIVE_LIGHT_OFFSET_MS = 90000;   // 1m30 after train start
   const DISRUPTIVE_LIGHT_DURATION_MS = 30000; // 30s at 100%
   const DISRUPTIVE_VIBRATION_BURSTS = 3;      // 3 bursts each disruptive vibration event
-  const DISRUPTIVE_VIBRATION_MS = 500;       // per burst
+  const DISRUPTIVE_VIBRATION_MS = 300;       // per burst
   const DISRUPTIVE_VIBRATION_GAP_MS = 1000;   // gap between bursts
   const LD_INDUCTION_START_VOLUME = 0;         // induction starts at 0%
   // Full induction sequence:
@@ -2339,10 +2339,10 @@ function playFixedBeep75(durationMs, onEnded) {
     }, durationMs || 3000);
   }
 
-  // Validates participant ID format: digit9digit2digit3digit6.
+  // Validates participant ID format: XX9XX2XX3XX6 (12 digits).
   function validateParticipantId(pid) {
     var normalized = String(pid || '').trim();
-    var regex = /^\d9\d2\d3\d6$/;
+    var regex = /^\d{2}9\d{2}2\d{2}3\d{2}6$/;
     return regex.test(normalized);
   }
 

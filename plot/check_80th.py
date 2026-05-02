@@ -172,6 +172,8 @@ def main() -> None:
 
     sec_to_motion_delta_only: Dict[int, float] = {}
     sec_to_motion_delta_plus_tilt15: Dict[int, float] = {}
+    has_explicit_delta_only = False
+    has_explicit_delta_plus_tilt15 = False
     for row in motion_rows:
         if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
             continue
@@ -181,15 +183,20 @@ def main() -> None:
         sec = as_int(row.get("second_index", ""))
         # New exports may include explicit split motion series.
         # Fallback keeps compatibility with older exports where motion_per_second is the only signal.
-        val_delta_only = as_float(row.get("motion_delta_only", ""))
+        raw_delta_only = row.get("motion_delta_only", "")
+        val_delta_only = as_float(raw_delta_only)
         if val_delta_only is None:
             val_delta_only = as_float(row.get("motion_per_second", ""))
-        val_delta_plus_tilt15 = as_float(row.get("motion_delta_plus_tilt15", ""))
+        raw_delta_plus_tilt15 = row.get("motion_delta_plus_tilt15", "")
+        val_delta_plus_tilt15 = as_float(raw_delta_plus_tilt15)
         if sec is None or val_delta_only is None:
             continue
         sec_to_motion_delta_only[sec] = val_delta_only
+        if raw_delta_only not in ("", None):
+            has_explicit_delta_only = True
         if val_delta_plus_tilt15 is not None:
             sec_to_motion_delta_plus_tilt15[sec] = val_delta_plus_tilt15
+            has_explicit_delta_plus_tilt15 = True
 
     if not sec_to_motion_delta_only:
         raise ValueError("No motion rows found for selected session.")
@@ -325,26 +332,38 @@ def main() -> None:
         out = os.path.join(DEFAULT_OUT_DIR, f"p80_overview_{sel_pid}{suffix}.png")
 
     fig, ax = plt.subplots(figsize=(15, 6))
-    ax.plot(xs, smoothed_vals, color="tab:blue", linewidth=1.1, alpha=0.9, label="smoothed delta-only recomputed (5min)")
-    if has_firebase_smoothed:
-        ax.plot(
-            xs,
-            smoothed_firebase_vals,
-            color="tab:orange",
-            linewidth=1.0,
-            alpha=0.85,
-            label="smoothed motion from Firebase",
-        )
     has_tilt15_smoothed = any(np.isfinite(v) for v in smoothed_tilt15_vals)
-    if has_tilt15_smoothed:
-        ax.plot(
-            xs,
-            smoothed_tilt15_vals,
-            color="tab:cyan",
-            linewidth=1.0,
-            alpha=0.85,
-            label="smoothed delta+tilt15 recomputed (5min)",
-        )
+    platform_mode = "android" if has_explicit_delta_plus_tilt15 else "ios"
+    if platform_mode == "android":
+        if has_firebase_smoothed:
+            ax.plot(
+                xs,
+                smoothed_firebase_vals,
+                color="tab:orange",
+                linewidth=1.0,
+                alpha=0.9,
+                label="smoothed motion from Firebase",
+            )
+        if has_tilt15_smoothed:
+            ax.plot(
+                xs,
+                smoothed_tilt15_vals,
+                color="tab:cyan",
+                linewidth=1.0,
+                alpha=0.9,
+                label="smoothed delta+tilt15 recomputed (5min)",
+            )
+    else:
+        ax.plot(xs, smoothed_vals, color="tab:blue", linewidth=1.1, alpha=0.9, label="smoothed delta-only recomputed (5min)")
+        if has_firebase_smoothed:
+            ax.plot(
+                xs,
+                smoothed_firebase_vals,
+                color="tab:orange",
+                linewidth=1.0,
+                alpha=0.9,
+                label="smoothed motion from Firebase",
+            )
     q_app_pct = int(round((1.0 - pct) * 100))
     ax.plot(
         xs,
@@ -427,31 +446,43 @@ def main() -> None:
                 ax.axis("off")
                 continue
             xw = [session_anchor + timedelta(seconds=s) for s in secs]
-            y_sm = [smoothed_by_sec[s] for s in secs]
+            y_sm = [smoothed_by_sec[s] if s in smoothed_by_sec else np.nan for s in secs]
             y_sm_fb = [smoothed_firebase_by_sec[s] if s in smoothed_firebase_by_sec else np.nan for s in secs]
             y_sm_tilt15 = [smoothed_tilt15_by_sec[s] if s in smoothed_tilt15_by_sec else np.nan for s in secs]
             y_q20_delta = [q20_delta_by_sec[s] if s in q20_delta_by_sec else np.nan for s in secs]
             y_q20_app = [q20_app_by_sec[s] if s in q20_app_by_sec else np.nan for s in secs]
             y_q20_tilt15 = [q20_tilt15_by_sec[s] if s in q20_tilt15_by_sec else np.nan for s in secs]
-            ax.plot(xw, y_sm, color="tab:blue", linewidth=1.1, alpha=0.9, label="smoothed delta-only (recomputed)")
-            if any(np.isfinite(v) for v in y_sm_fb):
-                ax.plot(
-                    xw,
-                    y_sm_fb,
-                    color="tab:orange",
-                    linewidth=1.0,
-                    alpha=0.85,
-                    label="smoothed motion (Firebase)",
-                )
-            if any(np.isfinite(v) for v in y_sm_tilt15):
-                ax.plot(
-                    xw,
-                    y_sm_tilt15,
-                    color="tab:cyan",
-                    linewidth=1.0,
-                    alpha=0.85,
-                    label="smoothed delta+tilt15 (recomputed)",
-                )
+            if platform_mode == "android":
+                if any(np.isfinite(v) for v in y_sm_fb):
+                    ax.plot(
+                        xw,
+                        y_sm_fb,
+                        color="tab:orange",
+                        linewidth=1.0,
+                        alpha=0.9,
+                        label="smoothed motion (Firebase)",
+                    )
+                if any(np.isfinite(v) for v in y_sm_tilt15):
+                    ax.plot(
+                        xw,
+                        y_sm_tilt15,
+                        color="tab:cyan",
+                        linewidth=1.0,
+                        alpha=0.9,
+                        label="smoothed delta+tilt15 (recomputed)",
+                    )
+            else:
+                if any(np.isfinite(v) for v in y_sm):
+                    ax.plot(xw, y_sm, color="tab:blue", linewidth=1.1, alpha=0.9, label="smoothed delta-only (recomputed)")
+                if any(np.isfinite(v) for v in y_sm_fb):
+                    ax.plot(
+                        xw,
+                        y_sm_fb,
+                        color="tab:orange",
+                        linewidth=1.0,
+                        alpha=0.9,
+                        label="smoothed motion (Firebase)",
+                    )
             if any(np.isfinite(v) for v in y_q20_delta):
                 ax.plot(
                     xw,
