@@ -8,11 +8,9 @@
   },
   "packageClassList": [
     "NativeAudio",
-    "VolumeButtonsPlugin",
     "VoiceRecorder",
     "FilesystemPlugin",
     "HapticsPlugin",
-    "TorchPlugin",
-    "SystemVolumePlugin"
+    "TorchPlugin"
   ]
 }

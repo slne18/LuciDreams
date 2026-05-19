@@ -2,11 +2,9 @@
 """
 Quick REM check plot:
 - read per-second motion series
-- rebuild 5-minute smoothed motion from delta-only
-- rebuild 5-minute smoothed motion from delta+tilt15 when available
 - load Firebase-smoothed motion series when available
-- compute q20 cutoffs from recomputed smoothed signals
-- plot overview with smoothed series + app-equivalent cutoff + REM overlays
+- compute q20 cutoff from Firebase smoothed motion
+- plot overview with Firebase smoothed series + app cutoff + REM overlays
 """
 
 import argparse
@@ -62,41 +60,6 @@ def hms_to_seconds(value: str) -> Optional[int]:
     if dt is None:
         return None
     return dt.hour * 3600 + dt.minute * 60 + dt.second
-
-
-def rolling_mean(values: List[float], window_sec: int) -> List[float]:
-    w = max(1, int(window_sec))
-    out = [np.nan] * len(values)
-    run_sum = 0.0
-    for i, v in enumerate(values):
-        run_sum += float(v)
-        if i >= w:
-            run_sum -= float(values[i - w])
-        if i >= w - 1:
-            out[i] = run_sum / w
-    return out
-
-
-def rolling_mean_optional(values: List[Optional[float]], window_sec: int) -> List[float]:
-    """Rolling mean that tolerates missing values; emits NaN if window incomplete."""
-    w = max(1, int(window_sec))
-    out = [np.nan] * len(values)
-    run_sum = 0.0
-    run_count = 0
-    window: List[Optional[float]] = []
-    for i, v in enumerate(values):
-        window.append(v)
-        if v is not None and np.isfinite(v):
-            run_sum += float(v)
-            run_count += 1
-        if len(window) > w:
-            old = window.pop(0)
-            if old is not None and np.isfinite(old):
-                run_sum -= float(old)
-                run_count -= 1
-        if len(window) == w and run_count == w:
-            out[i] = run_sum / w
-    return out
 
 
 def choose_session(
@@ -170,10 +133,7 @@ def main() -> None:
         motion_rows, args.pid, args.night_number, args.session_start_boston
     )
 
-    sec_to_motion_delta_only: Dict[int, float] = {}
-    sec_to_motion_delta_plus_tilt15: Dict[int, float] = {}
-    has_explicit_delta_only = False
-    has_explicit_delta_plus_tilt15 = False
+    sec_to_motion: Dict[int, float] = {}
     for row in motion_rows:
         if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
             continue
@@ -181,24 +141,12 @@ def main() -> None:
         if sel_night is not None and row_night != sel_night:
             continue
         sec = as_int(row.get("second_index", ""))
-        # New exports may include explicit split motion series.
-        # Fallback keeps compatibility with older exports where motion_per_second is the only signal.
-        raw_delta_only = row.get("motion_delta_only", "")
-        val_delta_only = as_float(raw_delta_only)
-        if val_delta_only is None:
-            val_delta_only = as_float(row.get("motion_per_second", ""))
-        raw_delta_plus_tilt15 = row.get("motion_delta_plus_tilt15", "")
-        val_delta_plus_tilt15 = as_float(raw_delta_plus_tilt15)
-        if sec is None or val_delta_only is None:
+        val_motion = as_float(row.get("motion_per_second", ""))
+        if sec is None or val_motion is None:
             continue
-        sec_to_motion_delta_only[sec] = val_delta_only
-        if raw_delta_only not in ("", None):
-            has_explicit_delta_only = True
-        if val_delta_plus_tilt15 is not None:
-            sec_to_motion_delta_plus_tilt15[sec] = val_delta_plus_tilt15
-            has_explicit_delta_plus_tilt15 = True
+        sec_to_motion[sec] = val_motion
 
-    if not sec_to_motion_delta_only:
+    if not sec_to_motion:
         raise ValueError("No motion rows found for selected session.")
 
     sec_to_smoothed_firebase_raw: Dict[int, float] = {}
@@ -219,18 +167,6 @@ def main() -> None:
         raise ValueError(f"Invalid session_start_boston: {sel_start}")
     session_anchor = datetime(2000, 1, 1) + timedelta(seconds=session_start_sod)
 
-    sorted_secs_delta = sorted(sec_to_motion_delta_only.keys())
-    raw_series_delta_only = [sec_to_motion_delta_only[s] for s in sorted_secs_delta]
-    raw_series_delta_plus_tilt15_opt = [sec_to_motion_delta_plus_tilt15.get(s) for s in sorted_secs_delta]
-    smoothed_series_delta_only = rolling_mean(raw_series_delta_only, args.smooth_window_sec)
-    smoothed_series_delta_plus_tilt15 = rolling_mean_optional(raw_series_delta_plus_tilt15_opt, args.smooth_window_sec)
-    smoothed_recomputed_by_sec: Dict[int, float] = {}
-    smoothed_recomputed_tilt15_by_sec: Dict[int, float] = {}
-    for idx, sec in enumerate(sorted_secs_delta):
-        if idx < len(smoothed_series_delta_only) and np.isfinite(smoothed_series_delta_only[idx]):
-            smoothed_recomputed_by_sec[sec] = float(smoothed_series_delta_only[idx])
-        if idx < len(smoothed_series_delta_plus_tilt15) and np.isfinite(smoothed_series_delta_plus_tilt15[idx]):
-            smoothed_recomputed_tilt15_by_sec[sec] = float(smoothed_series_delta_plus_tilt15[idx])
     # Firebase-exported smoothed series can be stored with second_index starting at 0
     # even though values are only valid after the initial rolling window.
     # If detected, shift by window-1 to align with true elapsed seconds.
@@ -238,8 +174,9 @@ def main() -> None:
     if sec_to_smoothed_firebase_raw:
         min_sm_raw = min(sec_to_smoothed_firebase_raw.keys())
         max_sm_raw = max(sec_to_smoothed_firebase_raw.keys())
-        min_motion = min(sorted_secs_delta)
-        max_motion = max(sorted_secs_delta)
+        motion_secs = sorted(sec_to_motion.keys())
+        min_motion = min(motion_secs)
+        max_motion = max(motion_secs)
         expected_offset = max(0, int(args.smooth_window_sec) - 1)
         apply_shift = (
             expected_offset > 0
@@ -249,64 +186,27 @@ def main() -> None:
         shift = expected_offset if apply_shift else 0
         for sec_raw, val in sec_to_smoothed_firebase_raw.items():
             sec_to_smoothed_firebase[sec_raw + shift] = val
-    sorted_secs = sorted(set(sorted_secs_delta) | set(sec_to_smoothed_firebase.keys()))
-    has_firebase_smoothed = len(sec_to_smoothed_firebase) > 0
-    xs, smoothed_vals, q40_vals = [], [], []
+    if not sec_to_smoothed_firebase:
+        raise ValueError("No Firebase smoothed-motion rows found for selected session.")
+
+    sorted_secs = sorted(sec_to_smoothed_firebase.keys())
+    xs = []
     smoothed_firebase_vals = []
-    smoothed_tilt15_vals = []
-    q20_delta_vals = []
     q20_app_vals = []
-    q20_tilt15_vals = []
-    q40_by_sec: Dict[int, float] = {}
-    smoothed_by_sec: Dict[int, float] = {}
     smoothed_firebase_by_sec: Dict[int, float] = {}
-    smoothed_tilt15_by_sec: Dict[int, float] = {}
-    q20_delta_by_sec: Dict[int, float] = {}
     q20_app_by_sec: Dict[int, float] = {}
-    q20_tilt15_by_sec: Dict[int, float] = {}
-    smoothed_history_ref: List[float] = []
-    smoothed_history_delta: List[float] = []
     smoothed_history_app: List[float] = []
-    smoothed_history_tilt15: List[float] = []
     for sec in sorted_secs:
-        sm_recomputed = smoothed_recomputed_by_sec.get(sec, np.nan)
         sm_fb = sec_to_smoothed_firebase.get(sec, np.nan)
-        sm_tilt15 = smoothed_recomputed_tilt15_by_sec.get(sec, np.nan)
-        sm_ref = sm_fb if np.isfinite(sm_fb) else sm_recomputed
-        if not np.isfinite(sm_ref):
+        if not np.isfinite(sm_fb):
             continue
-        smoothed_history_ref.append(float(sm_ref))
+        smoothed_history_app.append(float(sm_fb))
         xs.append(session_anchor + timedelta(seconds=sec))
-        smoothed_vals.append(float(sm_recomputed) if np.isfinite(sm_recomputed) else np.nan)
-        smoothed_firebase_vals.append(float(sm_fb) if np.isfinite(sm_fb) else np.nan)
-        smoothed_tilt15_vals.append(float(sm_tilt15) if np.isfinite(sm_tilt15) else np.nan)
-        q40_now = float(np.quantile(smoothed_history_ref, 0.40))
-        q40_vals.append(q40_now)
-        q40_by_sec[sec] = q40_now
-        if np.isfinite(sm_recomputed):
-            smoothed_by_sec[sec] = float(sm_recomputed)
-            smoothed_history_delta.append(float(sm_recomputed))
-            q20_delta_now = float(np.quantile(smoothed_history_delta, 1.0 - pct))
-            q20_delta_by_sec[sec] = q20_delta_now
-            q20_delta_vals.append(q20_delta_now)
-        else:
-            q20_delta_vals.append(np.nan)
-        if np.isfinite(sm_fb):
-            smoothed_firebase_by_sec[sec] = float(sm_fb)
-            smoothed_history_app.append(float(sm_fb))
-            q20_app_now = float(np.quantile(smoothed_history_app, 1.0 - pct))
-            q20_app_by_sec[sec] = q20_app_now
-            q20_app_vals.append(q20_app_now)
-        else:
-            q20_app_vals.append(np.nan)
-        if np.isfinite(sm_tilt15):
-            smoothed_tilt15_by_sec[sec] = float(sm_tilt15)
-            smoothed_history_tilt15.append(float(sm_tilt15))
-            q20_tilt15_now = float(np.quantile(smoothed_history_tilt15, 1.0 - pct))
-            q20_tilt15_by_sec[sec] = q20_tilt15_now
-            q20_tilt15_vals.append(q20_tilt15_now)
-        else:
-            q20_tilt15_vals.append(np.nan)
+        smoothed_firebase_vals.append(float(sm_fb))
+        smoothed_firebase_by_sec[sec] = float(sm_fb)
+        q20_app_now = float(np.quantile(smoothed_history_app, 1.0 - pct))
+        q20_app_by_sec[sec] = q20_app_now
+        q20_app_vals.append(q20_app_now)
 
     rem_eps = []
     for row in rem_rows:
@@ -332,68 +232,24 @@ def main() -> None:
         out = os.path.join(DEFAULT_OUT_DIR, f"p80_overview_{sel_pid}{suffix}.png")
 
     fig, ax = plt.subplots(figsize=(15, 6))
-    has_tilt15_smoothed = any(np.isfinite(v) for v in smoothed_tilt15_vals)
-    platform_mode = "android" if has_explicit_delta_plus_tilt15 else "ios"
-    if platform_mode == "android":
-        if has_firebase_smoothed:
-            ax.plot(
-                xs,
-                smoothed_firebase_vals,
-                color="tab:orange",
-                linewidth=1.0,
-                alpha=0.9,
-                label="smoothed motion from Firebase",
-            )
-        if has_tilt15_smoothed:
-            ax.plot(
-                xs,
-                smoothed_tilt15_vals,
-                color="tab:cyan",
-                linewidth=1.0,
-                alpha=0.9,
-                label="smoothed delta+tilt15 recomputed (5min)",
-            )
-    else:
-        ax.plot(xs, smoothed_vals, color="tab:blue", linewidth=1.1, alpha=0.9, label="smoothed delta-only recomputed (5min)")
-        if has_firebase_smoothed:
-            ax.plot(
-                xs,
-                smoothed_firebase_vals,
-                color="tab:orange",
-                linewidth=1.0,
-                alpha=0.9,
-                label="smoothed motion from Firebase",
-            )
+    ax.plot(
+        xs,
+        smoothed_firebase_vals,
+        color="tab:orange",
+        linewidth=1.0,
+        alpha=0.9,
+        label="smoothed motion from Firebase",
+    )
     q_app_pct = int(round((1.0 - pct) * 100))
     ax.plot(
         xs,
-        q20_delta_vals,
-        color="tab:purple",
+        q20_app_vals,
+        color="tab:red",
         linewidth=1.1,
         alpha=0.9,
         linestyle="--",
-        label=f"q{q_app_pct} from smoothed delta-only",
+        label=f"q{q_app_pct} from smoothed app (Firebase)",
     )
-    if any(np.isfinite(v) for v in q20_app_vals):
-        ax.plot(
-            xs,
-            q20_app_vals,
-            color="tab:red",
-            linewidth=1.1,
-            alpha=0.9,
-            linestyle="--",
-            label=f"q{q_app_pct} from smoothed app (Firebase)",
-        )
-    if any(np.isfinite(v) for v in q20_tilt15_vals):
-        ax.plot(
-            xs,
-            q20_tilt15_vals,
-            color="tab:green",
-            linewidth=1.1,
-            alpha=0.9,
-            linestyle="--",
-            label=f"q{q_app_pct} from smoothed delta+tilt15",
-        )
 
     first = True
     for _, st_sec, en_sec in rem_eps:
@@ -405,7 +261,7 @@ def main() -> None:
         first = False
 
     ax.set_title(
-        f"Smoothed motion overview + q{q_app_pct} cutoffs by recomputed signals | pid={sel_pid} | night={sel_night} | "
+        f"Smoothed motion overview + q{q_app_pct} from Firebase smoothed motion | pid={sel_pid} | night={sel_night} | "
         f"session_start={sel_start} | smooth_window={int(args.smooth_window_sec)}s"
     )
     ax.set_xlabel("Time (Boston)")
@@ -431,7 +287,7 @@ def main() -> None:
         except Exception:
             axes = [axes]
 
-        first_valid_sec = min(smoothed_by_sec.keys()) if smoothed_by_sec else 0
+        first_valid_sec = min(smoothed_firebase_by_sec.keys()) if smoothed_firebase_by_sec else 0
         for i, (ep_idx, st_sec, en_sec) in enumerate(rem_eps):
             ax = axes[i]
             win_start = max(first_valid_sec, st_sec - max(0, int(args.per_rem_pre_sec)))
@@ -439,59 +295,23 @@ def main() -> None:
             secs = [
                 s
                 for s in range(win_start, win_end + 1)
-                if s in smoothed_by_sec
+                if s in smoothed_firebase_by_sec
             ]
             if not secs:
                 ax.text(0.5, 0.5, "No smoothed values", transform=ax.transAxes, ha="center", va="center")
                 ax.axis("off")
                 continue
             xw = [session_anchor + timedelta(seconds=s) for s in secs]
-            y_sm = [smoothed_by_sec[s] if s in smoothed_by_sec else np.nan for s in secs]
             y_sm_fb = [smoothed_firebase_by_sec[s] if s in smoothed_firebase_by_sec else np.nan for s in secs]
-            y_sm_tilt15 = [smoothed_tilt15_by_sec[s] if s in smoothed_tilt15_by_sec else np.nan for s in secs]
-            y_q20_delta = [q20_delta_by_sec[s] if s in q20_delta_by_sec else np.nan for s in secs]
             y_q20_app = [q20_app_by_sec[s] if s in q20_app_by_sec else np.nan for s in secs]
-            y_q20_tilt15 = [q20_tilt15_by_sec[s] if s in q20_tilt15_by_sec else np.nan for s in secs]
-            if platform_mode == "android":
-                if any(np.isfinite(v) for v in y_sm_fb):
-                    ax.plot(
-                        xw,
-                        y_sm_fb,
-                        color="tab:orange",
-                        linewidth=1.0,
-                        alpha=0.9,
-                        label="smoothed motion (Firebase)",
-                    )
-                if any(np.isfinite(v) for v in y_sm_tilt15):
-                    ax.plot(
-                        xw,
-                        y_sm_tilt15,
-                        color="tab:cyan",
-                        linewidth=1.0,
-                        alpha=0.9,
-                        label="smoothed delta+tilt15 (recomputed)",
-                    )
-            else:
-                if any(np.isfinite(v) for v in y_sm):
-                    ax.plot(xw, y_sm, color="tab:blue", linewidth=1.1, alpha=0.9, label="smoothed delta-only (recomputed)")
-                if any(np.isfinite(v) for v in y_sm_fb):
-                    ax.plot(
-                        xw,
-                        y_sm_fb,
-                        color="tab:orange",
-                        linewidth=1.0,
-                        alpha=0.9,
-                        label="smoothed motion (Firebase)",
-                    )
-            if any(np.isfinite(v) for v in y_q20_delta):
+            if any(np.isfinite(v) for v in y_sm_fb):
                 ax.plot(
                     xw,
-                    y_q20_delta,
-                    color="tab:purple",
-                    linewidth=1.1,
+                    y_sm_fb,
+                    color="tab:orange",
+                    linewidth=1.0,
                     alpha=0.9,
-                    linestyle="--",
-                    label=f"q{q_app_pct} delta-only",
+                    label="smoothed motion (Firebase)",
                 )
             if any(np.isfinite(v) for v in y_q20_app):
                 ax.plot(
@@ -502,16 +322,6 @@ def main() -> None:
                     alpha=0.9,
                     linestyle="--",
                     label=f"q{q_app_pct} app (Firebase)",
-                )
-            if any(np.isfinite(v) for v in y_q20_tilt15):
-                ax.plot(
-                    xw,
-                    y_q20_tilt15,
-                    color="tab:green",
-                    linewidth=1.1,
-                    alpha=0.9,
-                    linestyle="--",
-                    label=f"q{q_app_pct} delta+tilt15",
                 )
             st = session_anchor + timedelta(seconds=st_sec)
             en = session_anchor + timedelta(seconds=en_sec)

@@ -740,8 +740,10 @@
   }
 
   var db = null;
+  var firebaseConfigAvailable = false;
   try {
     var effectiveConfig = getEffectiveFirebaseConfig();
+    firebaseConfigAvailable = !!(effectiveConfig && effectiveConfig.apiKey);
     if (effectiveConfig && typeof firebase !== 'undefined') {
       firebase.initializeApp(effectiveConfig);
       if (firebase.auth) {
@@ -782,7 +784,6 @@
   const REM_EPISODE_MAX_TRAINS = 3;           // Per-REM-episode cap 
   const REFRACTORY_PERIOD_SEC = 300;          // 5 min between trains
   const AROUSAL_CHECK_WINDOW_SEC = 5;          // Movement within 5s after induction cue (raw motion; for arousal only)
-  const MOVEMENT_DURATION_FOR_AROUSAL = 2;    // Require 2s movement for arousal (kept: responsive to cue reaction)
   const AROUSAL_POST_CUE_WINDOW_SEC = 1;      // Compare raw motion in the 1s after cue vs REM baseline percentile
   const INDUCTION_AROUSAL_RAW_PERCENTILE = 0.90;
   const DISRUPTIVE_AROUSAL_RAW_PERCENTILE = 0.90;
@@ -873,8 +874,6 @@
     totalHistory: [],
     soundLog: [],
     motionSamplesForBackend: [],
-    motionDeltaOnlySamplesForBackend: [],
-    motionDeltaPlusTilt15SamplesForBackend: [],
     rawSensorSamples: [],
     remEpisodes: [],
     smoothedMotionSeries: [],
@@ -897,6 +896,14 @@
     oldX: 0, oldY: 0, oldZ: 0,
     motionThisSecond: 0,
     lastMagnitude: 9.81,
+    sensorEventCountThisSecond: 0,
+    sensorLastEventTsMs: null,
+    sensorInterEventDtSumMsThisSecond: 0,
+    sensorInterEventDtCountThisSecond: 0,
+    sensorInterEventDtMaxMsThisSecond: 0,
+    sensorEventsPerSecondForBackend: [],
+    sensorEventDtAvgMsForBackend: [],
+    sensorEventDtMaxMsForBackend: [],
     oldValuesSet: false,
     lastRawX: 0, lastRawY: 0, lastRawZ: 0,
     accelHandler: null,
@@ -910,7 +917,6 @@
     sleepStartTime: null,
     timerInterval: null,
     localBackupTimerId: null,
-    consecutive_seconds_above_threshold: 0,
     userMinVolume: null,
     baselineSliderVolume: 0.1,
     tonight_condition: null,
@@ -993,7 +999,10 @@
 
   resetFeatureChecks();
 
-  if (!db) state.appStep = -1;
+  // Only force Lab setup when no usable Firebase config exists at all.
+  // If config exists but SDK/network is temporarily unavailable, continue the flow
+  // and keep local backup + deferred sync behavior.
+  if (!db && !firebaseConfigAvailable) state.appStep = -1;
 
   // Returns condition state key.
   function getConditionStateKey(pid) { return 'luci_condition_state_' + (pid || 'default'); }
@@ -2836,8 +2845,6 @@ function playFixedBeep75(durationMs, onEnded) {
         cancelScheduledCue();
       }
 
-      if (isRawAbove80PercentOfSeries) state.consecutive_seconds_above_threshold++;
-      else state.consecutive_seconds_above_threshold = 0;
 
       // Arousal check in disruptive phase:
       // if post-cue raw metric (single value when window=1s, otherwise mean) > REM-local raw percentile baseline.
@@ -2948,7 +2955,6 @@ function playFixedBeep75(durationMs, onEnded) {
       }
     } else {
       // Before 4h gate or before the rolling window is available: no REM / trains from this logic.
-      state.consecutive_seconds_above_threshold = 0;
       state.inRemEpisode = false;
       state.consecutiveRemSeconds = 0;
       state.remEntryStableStartEpoch = null;
@@ -3069,8 +3075,14 @@ function playFixedBeep75(durationMs, onEnded) {
     state.appStep = targetStep || 5;
     state.motionThisSecond = 0;
     state.motionSamplesForBackend = [];
-    state.motionDeltaOnlySamplesForBackend = [];
-    state.motionDeltaPlusTilt15SamplesForBackend = [];
+    state.sensorEventCountThisSecond = 0;
+    state.sensorLastEventTsMs = null;
+    state.sensorInterEventDtSumMsThisSecond = 0;
+    state.sensorInterEventDtCountThisSecond = 0;
+    state.sensorInterEventDtMaxMsThisSecond = 0;
+    state.sensorEventsPerSecondForBackend = [];
+    state.sensorEventDtAvgMsForBackend = [];
+    state.sensorEventDtMaxMsForBackend = [];
     state.secondsRecorded = 0;
     state.smoothedMotionSeries = [];
     state.rawMotionSeries = [];
@@ -3083,11 +3095,9 @@ function playFixedBeep75(durationMs, onEnded) {
     state.oldValuesSet = false;
     state.consecutiveRemSeconds = 0;
     state.remEpisodes = [];
-    state.rawSensorSamples = [];
     state.inRemEpisode = false;
     state.currentRemEpisodeEntryThreshold = null;
     state.lastCueEpoch = 0;
-      state.consecutive_seconds_above_threshold = 0;
       state.trainPhase = null;
     state.trainStartEpoch = null;
     state.lastInductionPlayEpoch = null;
@@ -3107,6 +3117,15 @@ function playFixedBeep75(durationMs, onEnded) {
 
     // Handles on accel.
     function onAccel(e) {
+      const nowMs = Date.now();
+      state.sensorEventCountThisSecond += 1;
+      if (state.sensorLastEventTsMs != null) {
+        const dtMs = Math.max(0, nowMs - state.sensorLastEventTsMs);
+        state.sensorInterEventDtSumMsThisSecond += dtMs;
+        state.sensorInterEventDtCountThisSecond += 1;
+        if (dtMs > state.sensorInterEventDtMaxMsThisSecond) state.sensorInterEventDtMaxMsThisSecond = dtMs;
+      }
+      state.sensorLastEventTsMs = nowMs;
       const x = e.accelerationIncludingGravity.x;
       const y = e.accelerationIncludingGravity.y;
       const z = e.accelerationIncludingGravity.z;
@@ -3130,15 +3149,25 @@ function playFixedBeep75(durationMs, onEnded) {
 
     state.motionSampleTimer = setInterval(function() {
       let deltaOnlyMotion = state.motionThisSecond;
+      let sensorEventsPerSecond = state.sensorEventCountThisSecond || 0;
+      let sensorDtAvgMs = state.sensorInterEventDtCountThisSecond > 0
+        ? (state.sensorInterEventDtSumMsThisSecond / state.sensorInterEventDtCountThisSecond)
+        : 0;
+      let sensorDtMaxMs = state.sensorInterEventDtCountThisSecond > 0
+        ? state.sensorInterEventDtMaxMsThisSecond
+        : 0;
       state.motionThisSecond = 0;
+      state.sensorEventCountThisSecond = 0;
+      state.sensorInterEventDtSumMsThisSecond = 0;
+      state.sensorInterEventDtCountThisSecond = 0;
+      state.sensorInterEventDtMaxMsThisSecond = 0;
       let motionFromTilt = state.lastMagnitude < 2 ? state.lastMagnitude : Math.abs(state.lastMagnitude - 9.81);
-      let motionWithTilt15 = deltaOnlyMotion + (ANDROID_TILT_WEIGHT * motionFromTilt);
       let legacyMotion = deltaOnlyMotion + motionFromTilt;
-      let platform = getCapacitorPlatform();
-      let remMotion = (platform === 'android') ? deltaOnlyMotion : legacyMotion;
-      if (platform !== 'android') state.motionDeltaOnlySamplesForBackend.push(deltaOnlyMotion);
-      if (platform === 'android') state.motionDeltaPlusTilt15SamplesForBackend.push(motionWithTilt15);
+      let remMotion = legacyMotion;
       state.motionSamplesForBackend.push(remMotion);
+      state.sensorEventsPerSecondForBackend.push(sensorEventsPerSecond);
+      state.sensorEventDtAvgMsForBackend.push(sensorDtAvgMs);
+      state.sensorEventDtMaxMsForBackend.push(sensorDtMaxMs);
       processMotionPerSecond(remMotion);
     }, 1000);
 
@@ -3412,15 +3441,11 @@ function playFixedBeep75(durationMs, onEnded) {
 
     var roll = computeStimulationRollups(rem_periods);
     var currentSeriesStillnessCutoff = getCurrentSeriesStillnessCutoff();
-    var platform = getCapacitorPlatform();
     // Persist per-second motion amount (not 80th-percentile cutoff series).
     var motionSeries = compactNumericSeries((state.motionSamplesForBackend || []).slice(), 3);
-    var motionDeltaOnlySeries = (platform !== 'android')
-      ? compactNumericSeries((state.motionDeltaOnlySamplesForBackend || []).slice(), 3)
-      : [];
-    var motionDeltaPlusTilt15Series = (platform === 'android')
-      ? compactNumericSeries((state.motionDeltaPlusTilt15SamplesForBackend || []).slice(), 3)
-      : [];
+    var sensorEventsPerSecondSeries = compactNumericSeries((state.sensorEventsPerSecondForBackend || []).slice(), 0);
+    var sensorEventDtAvgMsSeries = compactNumericSeries((state.sensorEventDtAvgMsForBackend || []).slice(), 2);
+    var sensorEventDtMaxMsSeries = compactNumericSeries((state.sensorEventDtMaxMsForBackend || []).slice(), 2);
     // Also persist smoothed rolling-motion series used by REM logic.
     var smoothedMotionSeries = compactNumericSeries((state.smoothedMotionSeries || []).slice(), 3);
 
@@ -3455,17 +3480,15 @@ function playFixedBeep75(durationMs, onEnded) {
       rem_periods_count: rem_periods.length,
       motion_per_second_series_json: JSON.stringify(motionSeries),
       motion_per_second_series_len: motionSeries.length,
+      sensor_events_per_second_series_json: JSON.stringify(sensorEventsPerSecondSeries),
+      sensor_events_per_second_series_len: sensorEventsPerSecondSeries.length,
+      sensor_event_dt_avg_ms_series_json: JSON.stringify(sensorEventDtAvgMsSeries),
+      sensor_event_dt_avg_ms_series_len: sensorEventDtAvgMsSeries.length,
+      sensor_event_dt_max_ms_series_json: JSON.stringify(sensorEventDtMaxMsSeries),
+      sensor_event_dt_max_ms_series_len: sensorEventDtMaxMsSeries.length,
       smoothed_motion_series_json: JSON.stringify(smoothedMotionSeries),
       smoothed_motion_series_len: smoothedMotionSeries.length
     };
-    if (motionDeltaOnlySeries.length > 0) {
-      firestoreDoc.motion_delta_only_series_json = JSON.stringify(motionDeltaOnlySeries);
-      firestoreDoc.motion_delta_only_series_len = motionDeltaOnlySeries.length;
-    }
-    if (motionDeltaPlusTilt15Series.length > 0) {
-      firestoreDoc.motion_delta_plus_tilt15_series_json = JSON.stringify(motionDeltaPlusTilt15Series);
-      firestoreDoc.motion_delta_plus_tilt15_series_len = motionDeltaPlusTilt15Series.length;
-    }
 
     return {
       firestoreDoc: firestoreDoc,
@@ -3611,8 +3634,9 @@ function playFixedBeep75(durationMs, onEnded) {
     var next = Object.assign({}, doc || {});
     var changed = false;
     changed = compactSeriesJsonField(next, 'motion_per_second_series_json', 'motion_per_second_series_len', 3) || changed;
-    changed = compactSeriesJsonField(next, 'motion_delta_only_series_json', 'motion_delta_only_series_len', 3) || changed;
-    changed = compactSeriesJsonField(next, 'motion_delta_plus_tilt15_series_json', 'motion_delta_plus_tilt15_series_len', 3) || changed;
+    changed = compactSeriesJsonField(next, 'sensor_events_per_second_series_json', 'sensor_events_per_second_series_len', 0) || changed;
+    changed = compactSeriesJsonField(next, 'sensor_event_dt_avg_ms_series_json', 'sensor_event_dt_avg_ms_series_len', 2) || changed;
+    changed = compactSeriesJsonField(next, 'sensor_event_dt_max_ms_series_json', 'sensor_event_dt_max_ms_series_len', 2) || changed;
     changed = compactSeriesJsonField(next, 'smoothed_motion_series_json', 'smoothed_motion_series_len', 3) || changed;
     if (!changed) return doc;
     return next;
@@ -3637,11 +3661,12 @@ function playFixedBeep75(durationMs, onEnded) {
 
   function buildJsonSplitDocs(doc) {
     var motion = parseJsonArraySafe(doc && doc.motion_per_second_series_json);
-    var motionDeltaOnly = parseJsonArraySafe(doc && doc.motion_delta_only_series_json);
-    var motionDeltaPlusTilt15 = parseJsonArraySafe(doc && doc.motion_delta_plus_tilt15_series_json);
+    var sensorEvents = parseJsonArraySafe(doc && doc.sensor_events_per_second_series_json);
+    var sensorDtAvg = parseJsonArraySafe(doc && doc.sensor_event_dt_avg_ms_series_json);
+    var sensorDtMax = parseJsonArraySafe(doc && doc.sensor_event_dt_max_ms_series_json);
     var smooth = parseJsonArraySafe(doc && doc.smoothed_motion_series_json);
     var rem = parseJsonArraySafe(doc && doc.rem_periods_json);
-    if (!motion.length && !motionDeltaOnly.length && !motionDeltaPlusTilt15.length && !smooth.length && !rem.length) return null;
+    if (!motion.length && !sensorEvents.length && !sensorDtAvg.length && !sensorDtMax.length && !smooth.length && !rem.length) return null;
 
     var groupId = generateSessionGroupId(doc && doc.participant_id);
     var maxParts = 12;
@@ -3650,8 +3675,9 @@ function playFixedBeep75(durationMs, onEnded) {
       var allFit = true;
       for (var i = 0; i < parts; i++) {
         var motionSlice = sliceByPart(motion, i, parts);
-        var motionDeltaOnlySlice = sliceByPart(motionDeltaOnly, i, parts);
-        var motionDeltaPlusTilt15Slice = sliceByPart(motionDeltaPlusTilt15, i, parts);
+        var sensorEventsSlice = sliceByPart(sensorEvents, i, parts);
+        var sensorDtAvgSlice = sliceByPart(sensorDtAvg, i, parts);
+        var sensorDtMaxSlice = sliceByPart(sensorDtMax, i, parts);
         var smoothSlice = sliceByPart(smooth, i, parts);
         var remSlice = sliceByPart(rem, i, parts);
         var outDoc;
@@ -3664,19 +3690,17 @@ function playFixedBeep75(durationMs, onEnded) {
             session_part_count: parts,
             motion_per_second_series_json: JSON.stringify(motionSlice),
             motion_per_second_series_len: motionSlice.length,
+            sensor_events_per_second_series_json: JSON.stringify(sensorEventsSlice),
+            sensor_events_per_second_series_len: sensorEventsSlice.length,
+            sensor_event_dt_avg_ms_series_json: JSON.stringify(sensorDtAvgSlice),
+            sensor_event_dt_avg_ms_series_len: sensorDtAvgSlice.length,
+            sensor_event_dt_max_ms_series_json: JSON.stringify(sensorDtMaxSlice),
+            sensor_event_dt_max_ms_series_len: sensorDtMaxSlice.length,
             smoothed_motion_series_json: JSON.stringify(smoothSlice),
             smoothed_motion_series_len: smoothSlice.length,
             rem_periods_json: JSON.stringify(remSlice),
             rem_periods_count: remSlice.length
           });
-          if (motionDeltaOnly.length > 0) {
-            outDoc.motion_delta_only_series_json = JSON.stringify(motionDeltaOnlySlice);
-            outDoc.motion_delta_only_series_len = motionDeltaOnlySlice.length;
-          }
-          if (motionDeltaPlusTilt15.length > 0) {
-            outDoc.motion_delta_plus_tilt15_series_json = JSON.stringify(motionDeltaPlusTilt15Slice);
-            outDoc.motion_delta_plus_tilt15_series_len = motionDeltaPlusTilt15Slice.length;
-          }
         } else {
           outDoc = {
             participant_id: doc.participant_id,
@@ -3691,19 +3715,17 @@ function playFixedBeep75(durationMs, onEnded) {
             condition: doc && doc.general ? doc.general.condition : null,
             motion_per_second_series_json: JSON.stringify(motionSlice),
             motion_per_second_series_len: motionSlice.length,
+            sensor_events_per_second_series_json: JSON.stringify(sensorEventsSlice),
+            sensor_events_per_second_series_len: sensorEventsSlice.length,
+            sensor_event_dt_avg_ms_series_json: JSON.stringify(sensorDtAvgSlice),
+            sensor_event_dt_avg_ms_series_len: sensorDtAvgSlice.length,
+            sensor_event_dt_max_ms_series_json: JSON.stringify(sensorDtMaxSlice),
+            sensor_event_dt_max_ms_series_len: sensorDtMaxSlice.length,
             smoothed_motion_series_json: JSON.stringify(smoothSlice),
             smoothed_motion_series_len: smoothSlice.length,
             rem_periods_json: JSON.stringify(remSlice),
             rem_periods_count: remSlice.length
           };
-          if (motionDeltaOnly.length > 0) {
-            outDoc.motion_delta_only_series_json = JSON.stringify(motionDeltaOnlySlice);
-            outDoc.motion_delta_only_series_len = motionDeltaOnlySlice.length;
-          }
-          if (motionDeltaPlusTilt15.length > 0) {
-            outDoc.motion_delta_plus_tilt15_series_json = JSON.stringify(motionDeltaPlusTilt15Slice);
-            outDoc.motion_delta_plus_tilt15_series_len = motionDeltaPlusTilt15Slice.length;
-          }
         }
         var partSize = estimateDocSizeBytes(outDoc);
         if (partSize > FIRESTORE_DOC_SOFT_LIMIT_BYTES) {
@@ -4220,8 +4242,9 @@ function playFixedBeep75(durationMs, onEnded) {
       return p
         .then(function() {
           state.motionSamplesForBackend = [];
-          state.motionDeltaOnlySamplesForBackend = [];
-          state.motionDeltaPlusTilt15SamplesForBackend = [];
+          state.sensorEventsPerSecondForBackend = [];
+          state.sensorEventDtAvgMsForBackend = [];
+          state.sensorEventDtMaxMsForBackend = [];
           state.soundLog = [];
           console.log('Data synced to Firestore:', activeMode);
           return clearLocalSessionBackupSnapshot(state.pid).then(function() {
@@ -4359,6 +4382,17 @@ function playFixedBeep75(durationMs, onEnded) {
     }
 
     container.innerHTML = '';
+
+    if (!db && firebaseConfigAvailable && state.appStep !== -1) {
+      container.appendChild(el('p', {
+        className: 'text-body',
+        style: {
+          marginBottom: '10px',
+          fontSize: '0.9rem',
+          color: 'var(--orange-accent)'
+        }
+      }, ['Connectivity notice: cloud sync is temporarily unavailable. You can continue; data is stored locally and will sync automatically when connection returns.']));
+    }
 
     if (state.appStep !== 'training' && state.trainingActive) {
       stopTrainingPhase();

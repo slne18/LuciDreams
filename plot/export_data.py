@@ -296,6 +296,15 @@ def main():
         motion_delta_plus_tilt15_series = load_series_from_doc(
             data, "motion_delta_plus_tilt15_series", "motion_delta_plus_tilt15_series_json"
         )
+        sensor_events_per_second_series = load_series_from_doc(
+            data, "sensor_events_per_second_series", "sensor_events_per_second_series_json"
+        )
+        sensor_event_dt_avg_ms_series = load_series_from_doc(
+            data, "sensor_event_dt_avg_ms_series", "sensor_event_dt_avg_ms_series_json"
+        )
+        sensor_event_dt_max_ms_series = load_series_from_doc(
+            data, "sensor_event_dt_max_ms_series", "sensor_event_dt_max_ms_series_json"
+        )
 
         smoothed_series = data.get("smoothed_motion_series", None)
         if smoothed_series is None:
@@ -321,6 +330,9 @@ def main():
             len(motion_series),
             len(motion_delta_only_series),
             len(motion_delta_plus_tilt15_series),
+            len(sensor_events_per_second_series),
+            len(sensor_event_dt_avg_ms_series),
+            len(sensor_event_dt_max_ms_series),
         )
         for sec_idx in range(max_motion_len):
             point_iso = iso_plus_seconds(night_start_iso, sec_idx)
@@ -330,6 +342,15 @@ def main():
             )
             motion_delta_plus_tilt15_value = (
                 motion_delta_plus_tilt15_series[sec_idx] if sec_idx < len(motion_delta_plus_tilt15_series) else None
+            )
+            sensor_events_per_second_value = (
+                sensor_events_per_second_series[sec_idx] if sec_idx < len(sensor_events_per_second_series) else None
+            )
+            sensor_event_dt_avg_ms_value = (
+                sensor_event_dt_avg_ms_series[sec_idx] if sec_idx < len(sensor_event_dt_avg_ms_series) else None
+            )
+            sensor_event_dt_max_ms_value = (
+                sensor_event_dt_max_ms_series[sec_idx] if sec_idx < len(sensor_event_dt_max_ms_series) else None
             )
             motion_rows.append({
                 "pid": pid,
@@ -342,6 +363,9 @@ def main():
                 "motion_per_second": motion_value,
                 "motion_delta_only": motion_delta_only_value,
                 "motion_delta_plus_tilt15": motion_delta_plus_tilt15_value,
+                "sensor_events_per_second": sensor_events_per_second_value,
+                "sensor_event_dt_avg_ms": sensor_event_dt_avg_ms_value,
+                "sensor_event_dt_max_ms": sensor_event_dt_max_ms_value,
             })
 
         for sec_idx, smoothed_value in enumerate(smoothed_series):
@@ -498,6 +522,9 @@ def main():
             "motion_per_second",
             "motion_delta_only",
             "motion_delta_plus_tilt15",
+            "sensor_events_per_second",
+            "sensor_event_dt_avg_ms",
+            "sensor_event_dt_max_ms",
         ]
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()

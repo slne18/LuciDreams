@@ -3,8 +3,6 @@ PODS:
     - CapacitorCordova
   - CapacitorCommunityNativeAudio (8.0.0):
     - Capacitor
-  - CapacitorCommunityVolumeButtons (8.0.0):
-    - Capacitor
   - CapacitorCordova (8.3.0)
   - CapacitorFilesystem (8.1.2):
     - Capacitor
@@ -20,7 +18,6 @@ PODS:
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorCommunityNativeAudio (from `../../node_modules/@capacitor-community/native-audio`)"
-  - "CapacitorCommunityVolumeButtons (from `../../node_modules/@capacitor-community/volume-buttons`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
   - "CapacitorHaptics (from `../../node_modules/@capacitor/haptics`)"
@@ -36,8 +33,6 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorCommunityNativeAudio:
     :path: "../../node_modules/@capacitor-community/native-audio"
-  CapacitorCommunityVolumeButtons:
-    :path: "../../node_modules/@capacitor-community/volume-buttons"
   CapacitorCordova:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorFilesystem:
@@ -52,7 +47,6 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   Capacitor: 22e541237135648c9aa736232bb4d2eec35fddcb
   CapacitorCommunityNativeAudio: 0d1336ea95a8f1911292e082d5436961e4447cd8
-  CapacitorCommunityVolumeButtons: 532398512c4e0878072cb889db46aa28f2ff45b4
   CapacitorCordova: 2e1e2bb93b2f365309dc4ff18b72b9a69a7814a9
   CapacitorFilesystem: 2db285a1ac6e475cc27cae2e1bea999000f9e2be
   CapacitorHaptics: 296f771ecd89c7a1bd92a7b6826a7d268e2e70f5
@@ -60,6 +54,6 @@ SPEC CHECKSUMS:
   CapawesomeCapacitorTorch: d118c3fe55e7472061f02d4775f08899fde73a32
   IONFilesystemLib: 21a63377696b2d8fab5632ecfb7d2ac67bddb68a
 
-PODFILE CHECKSUM: 408947032b615ebf25464b065ebf669edd239de6
+PODFILE CHECKSUM: 510aef1f553f54df02923fbc2f7d8c963e74e034
 
 COCOAPODS: 1.16.2
