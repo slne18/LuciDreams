@@ -1,0 +1,11 @@
+pid,night_number,session_start_boston,rows,sensor_events_n,sensor_events_mean_hz,sensor_events_median_hz,sensor_events_p10_hz,sensor_events_p90_hz,sensor_events_zero_count,sensor_events_below5hz_count,sensor_events_below5hz_pct,sensor_dt_avg_n,sensor_dt_avg_mean_ms,sensor_dt_avg_p95_ms,sensor_dt_max_n,sensor_dt_max_mean_ms,sensor_dt_max_p95_ms,sensor_dt_max_gt500ms_count,sensor_dt_max_gt500ms_pct,sensor_dt_max_gt1000ms_count,sensor_dt_max_gt1000ms_pct
+09020306,1,00:32:13,25767,0,,,,,0,0,,0,,,0,,,0,,0,
+09020306,2,23:38:45,34568,0,,,,,0,0,,0,,,0,,,0,,0,
+09020306,3,01:58:44,16934,0,,,,,0,0,,0,,,0,,,0,,0,
+09020306,4,00:27:20,31673,0,,,,,0,0,,0,,,0,,,0,,0,
+19425306,1,00:17:40,21017,0,,,,,0,0,,0,,,0,,,0,,0,
+429172883516,1,00:22:06,31367,0,,,,,0,0,,0,,,0,,,0,,0,
+429172883526,1,23:51:28,32953,32953,59.32,59.00,58.00,60.00,0,0,0.00,32953,16.86,17.24,32953,35.07,53.00,0,0.00,0,0.00
+99223366,1,00:00:25,38138,0,,,,,0,0,,0,,,0,,,0,,0,
+Solene,1,23:46:09,30289,0,,,,,0,0,,0,,,0,,,0,,0,
+Solene,2,23:52:56,33745,0,,,,,0,0,,0,,,0,,,0,,0,
