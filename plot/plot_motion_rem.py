@@ -140,6 +140,32 @@ def safe_slug(value: Optional[str]) -> str:
     return s or "unknown"
 
 
+def build_session_output_paths(
+    sel_pid: str,
+    sel_night: Optional[int],
+    sel_start: str,
+    args: argparse.Namespace,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Return expected output paths for overview/per-rem for this session."""
+    pid_dir = os.path.join(MOTION_PLOTS_DIR, safe_slug(sel_pid))
+    suffix = f"_night{sel_night}" if sel_night is not None else ""
+    start_slug = safe_slug(sel_start)
+
+    overview_out: Optional[str] = None
+    per_rem_out: Optional[str] = None
+
+    if args.plot_mode in ("overview", "both"):
+        overview_out = args.output
+        if args.plot_mode == "both" or not overview_out or args.all_sessions:
+            overview_out = os.path.join(pid_dir, f"motion_overview_{sel_pid}{suffix}_{start_slug}.png")
+    if args.plot_mode in ("per-rem", "both"):
+        per_rem_out = args.output
+        if args.plot_mode == "both" or not per_rem_out or args.all_sessions:
+            per_rem_out = os.path.join(pid_dir, f"motion_per_rem_{sel_pid}{suffix}_{start_slug}.png")
+
+    return overview_out, per_rem_out
+
+
 def plot_one_session(
     sel_pid: str,
     sel_start: str,
@@ -255,15 +281,14 @@ def plot_one_session(
     os.makedirs(MOTION_PLOTS_DIR, exist_ok=True)
     pid_dir = os.path.join(MOTION_PLOTS_DIR, safe_slug(sel_pid))
     os.makedirs(pid_dir, exist_ok=True)
-    suffix = f"_night{sel_night}" if sel_night is not None else ""
-    start_slug = safe_slug(sel_start)
+    overview_default_out, per_rem_default_out = build_session_output_paths(sel_pid, sel_night, sel_start, args)
     cue_color = {"disruptive": "red", "induction": "green"}
     outputs = []
 
     if args.plot_mode in ("overview", "both"):
-        overview_out = args.output
-        if args.plot_mode == "both" or not overview_out or args.all_sessions:
-            overview_out = os.path.join(pid_dir, f"motion_overview_{sel_pid}{suffix}_{start_slug}.png")
+        overview_out = overview_default_out
+        if overview_out is None:
+            raise ValueError("Could not resolve overview output path.")
         overview_dir = os.path.dirname(overview_out)
         if overview_dir:
             os.makedirs(overview_dir, exist_ok=True)
@@ -343,9 +368,9 @@ def plot_one_session(
         if not rem_eps:
             print(f"No REM rows to plot for per-rem mode (pid={sel_pid}, night={sel_night}).")
             return outputs, 0, has_smoothed_col, sec_offset
-        per_rem_out = args.output
-        if args.plot_mode == "both" or not per_rem_out or args.all_sessions:
-            per_rem_out = os.path.join(pid_dir, f"motion_per_rem_{sel_pid}{suffix}_{start_slug}.png")
+        per_rem_out = per_rem_default_out
+        if per_rem_out is None:
+            raise ValueError("Could not resolve per-rem output path.")
         per_rem_dir = os.path.dirname(per_rem_out)
         if per_rem_dir:
             os.makedirs(per_rem_dir, exist_ok=True)
@@ -456,6 +481,11 @@ def main() -> None:
     parser.add_argument("--percentile", type=float, default=0.80, help="Cutoff percentile in [0,1], e.g. 0.80 for q20.")
     parser.add_argument("--output", default=None)
     parser.add_argument("--all-sessions", action="store_true", help="Plot all matching sessions (one file per session).")
+    parser.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="With --all-sessions, skip sessions whose expected output files already exist.",
+    )
     args = parser.parse_args()
     pct = float(args.percentile)
     if pct <= 0 or pct >= 1:
@@ -471,9 +501,20 @@ def main() -> None:
             raise ValueError("No sessions match the provided filters.")
         print(f"Found {len(sessions)} matching sessions.")
         success_count = 0
+        skipped_count = 0
         failed: List[Tuple[str, str, Optional[int], str]] = []
         for sel_pid, sel_start, sel_night in sessions:
             try:
+                if args.only_missing:
+                    expected_overview, expected_per_rem = build_session_output_paths(sel_pid, sel_night, sel_start, args)
+                    expected_paths = [p for p in [expected_overview, expected_per_rem] if p]
+                    if expected_paths and all(os.path.exists(p) for p in expected_paths):
+                        skipped_count += 1
+                        print(
+                            f"Skipping existing session outputs: pid={sel_pid}, night_number={sel_night}, "
+                            f"session_start_boston={sel_start}"
+                        )
+                        continue
                 outputs, rem_n, has_smoothed_col, sec_offset = plot_one_session(
                     sel_pid, sel_start, sel_night, cutoff_rows, rem_rows, cue_rows, args
                 )
@@ -491,7 +532,7 @@ def main() -> None:
                     f"Skipping session due to error: pid={sel_pid}, night_number={sel_night}, "
                     f"session_start_boston={sel_start} | {err_msg}"
                 )
-        print(f"Completed all-sessions run: {success_count} succeeded, {len(failed)} failed.")
+        print(f"Completed all-sessions run: {success_count} succeeded, {skipped_count} skipped, {len(failed)} failed.")
         if failed:
             print("Failed sessions:")
             for pid, start, night, err in failed:
