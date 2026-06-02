@@ -11,6 +11,9 @@ For each REM episode (optionally only those with both disruptive+induction cues)
 import argparse
 import math
 import os
+import re
+import subprocess
+import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -32,6 +35,42 @@ POWER_BAND_LOW_HZ = 30.0
 POWER_BAND_HIGH_HZ = 90.0
 POWER_LOG_EPS = 1e-12
 POWER_SMOOTH_SEC = 30.0
+
+
+def as_int(value: object) -> Optional[int]:
+    try:
+        return int(float(value))
+    except Exception:
+        return None
+
+
+def safe_slug(value: Optional[str]) -> str:
+    s = "" if value is None else str(value)
+    s = s.replace(":", "")
+    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s)
+    return s or "unknown"
+
+
+def list_rem_sessions(rem_df: pd.DataFrame, pid: Optional[str], night_number: Optional[int], session_start_boston: Optional[str]) -> List[Tuple[str, str, Optional[int]]]:
+    sessions: Dict[Tuple[str, str, Optional[int]], int] = {}
+    for _, row in rem_df.iterrows():
+        row_pid = str(row.get("pid", "")).strip()
+        row_start = str(row.get("session_start_boston", "")).strip()
+        row_night = as_int(row.get("night_number", ""))
+        if row_pid and row_start:
+            key = (row_pid, row_start, row_night)
+            sessions[key] = sessions.get(key, 0) + 1
+    if not sessions:
+        return []
+    items = list(sessions.keys())
+    if pid is not None:
+        items = [k for k in items if k[0] == str(pid)]
+    if night_number is not None:
+        items = [k for k in items if k[2] == int(night_number)]
+    if session_start_boston is not None:
+        items = [k for k in items if k[1] == str(session_start_boston)]
+    items.sort(key=lambda k: (k[0], k[2] if k[2] is not None else -1, k[1]))
+    return items
 
 
 def sec_of_day_to_elapsed(sec_of_day: float, ref_sec_of_day: float) -> float:
@@ -165,21 +204,15 @@ def choose_rem_session(
     night_number: Optional[int],
 ) -> pd.DataFrame:
     d = rem_df[rem_df["pid"].astype(str) == pid].copy()
-    if d.empty:
-        raise ValueError(f"No REM rows found for pid={pid}")
     has_night_col = "night_number" in d.columns
     if has_night_col:
         d["night_number"] = pd.to_numeric(d["night_number"], errors="coerce")
     if night_number is not None and has_night_col:
         d = d[d["night_number"] == int(night_number)].copy()
-        if d.empty:
-            raise ValueError(f"No REM rows found for pid={pid}, night_number={night_number}")
     if session_start_boston:
         d = d[d["session_start_boston"].astype(str) == session_start_boston].copy()
-        if d.empty:
-            raise ValueError(
-                f"No REM rows found for pid={pid}, night_number={night_number}, session_start_boston={session_start_boston}"
-            )
+        return d
+    if d.empty:
         return d
     if has_night_col:
         grp_n = d.groupby("night_number").size().sort_index()
@@ -194,7 +227,7 @@ def choose_rem_session(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Plot RAW_AF7/RAW_AF8 for each REM phase with cue markers.")
-    p.add_argument("--pid", required=True, help="Participant ID (e.g. Sole)")
+    p.add_argument("--pid", default=None, help="Participant ID (e.g. Sole)")
     p.add_argument("--night-number", type=int, default=None, help="Night number from export_data (1-based within pid)")
     p.add_argument("--eeg-csv", default=None, help="Path to EEG csv. If omitted, tries EEG_<eeg-pid><night>.csv then fallbacks")
     p.add_argument("--eeg-pid", default=None, help="Optional EEG file PID stem if it differs from --pid")
@@ -213,7 +246,94 @@ def main() -> None:
     p.add_argument("--per-rem-pre-sec", type=int, default=180, help="Seconds shown before REM start in per-rem mode")
     p.add_argument("--per-rem-post-sec", type=int, default=180, help="Seconds shown after REM end in per-rem mode")
     p.add_argument("--output", default=None)
+    p.add_argument("--all-sessions", action="store_true", help="Plot all matching sessions (one file per session).")
     args = p.parse_args()
+
+    if args.all_sessions:
+        rem_df_all = pd.read_csv(args.rem_csv)
+        sessions = list_rem_sessions(rem_df_all, args.pid, args.night_number, args.session_start_boston)
+        if not sessions:
+            raise ValueError("No sessions match the provided filters.")
+        print(f"Found {len(sessions)} matching sessions.")
+        success_count = 0
+        failed: List[Tuple[str, str, Optional[int], str]] = []
+        script_path = os.path.abspath(__file__)
+        for sel_pid, sel_start, sel_night in sessions:
+            pid_dir = os.path.join(EEG_PLOTS_DIR, safe_slug(sel_pid))
+            os.makedirs(pid_dir, exist_ok=True)
+            night_suffix = f"_night{sel_night}" if sel_night is not None else ""
+            start_slug = safe_slug(sel_start)
+            base_out = os.path.join(pid_dir, f"eeg_rem_{sel_pid}{night_suffix}_{start_slug}.png")
+            cmd = [
+                sys.executable,
+                script_path,
+                "--pid",
+                str(sel_pid),
+                "--session-start-boston",
+                str(sel_start),
+                "--plot-mode",
+                str(args.plot_mode),
+                "--max-points",
+                str(args.max_points),
+                "--overview-smooth-sec",
+                str(args.overview_smooth_sec),
+                "--bandpass-low-hz",
+                str(args.bandpass_low_hz),
+                "--bandpass-high-hz",
+                str(args.bandpass_high_hz),
+                "--notch-hz",
+                str(args.notch_hz),
+                "--notch-q",
+                str(args.notch_q),
+                "--per-rem-lowpass-hz",
+                str(args.per_rem_lowpass_hz),
+                "--per-rem-pre-sec",
+                str(args.per_rem_pre_sec),
+                "--per-rem-post-sec",
+                str(args.per_rem_post_sec),
+                "--rem-csv",
+                str(args.rem_csv),
+                "--cue-csv",
+                str(args.cue_csv),
+                "--output",
+                str(base_out),
+            ]
+            if sel_night is not None:
+                cmd.extend(["--night-number", str(sel_night)])
+            if args.both_phases_only:
+                cmd.append("--both-phases-only")
+            if args.eeg_csv:
+                cmd.extend(["--eeg-csv", str(args.eeg_csv)])
+            if args.eeg_pid:
+                cmd.extend(["--eeg-pid", str(args.eeg_pid)])
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if proc.returncode == 0:
+                    success_count += 1
+                    print(proc.stdout.strip())
+                else:
+                    err_msg = proc.stderr.strip() or proc.stdout.strip() or f"return code {proc.returncode}"
+                    failed.append((sel_pid, sel_start, sel_night, err_msg))
+                    print(
+                        f"Skipping session due to error: pid={sel_pid}, night_number={sel_night}, "
+                        f"session_start_boston={sel_start} | {err_msg}"
+                    )
+            except Exception as exc:
+                err_msg = f"{type(exc).__name__}: {exc}"
+                failed.append((sel_pid, sel_start, sel_night, err_msg))
+                print(
+                    f"Skipping session due to error: pid={sel_pid}, night_number={sel_night}, "
+                    f"session_start_boston={sel_start} | {err_msg}"
+                )
+        print(f"Completed all-sessions run: {success_count} succeeded, {len(failed)} failed.")
+        if failed:
+            print("Failed sessions:")
+            for pid, start, night, err in failed:
+                print(f"- pid={pid}, night_number={night}, session_start_boston={start} | {err}")
+        return
+
+    if not args.pid:
+        raise ValueError("--pid is required unless --all-sessions is used.")
     night_suffix = f"_night{args.night_number}" if args.night_number is not None else ""
     output_png = args.output or DEFAULT_OUTPUT_TEMPLATE.format(pid=f"{args.pid}{night_suffix}")
     if args.plot_mode == "both":
@@ -306,8 +426,6 @@ def main() -> None:
             if "disruptive" in types and "induction" in types:
                 keep.append(ep_idx)
         rem_df = rem_df[rem_df["episode_index"].isin(keep)].copy()
-        if rem_df.empty:
-            raise ValueError("No REM episodes with both disruptive and induction cues.")
 
     # Load EEG with only LP 40 Hz filtering (no smoothing, no aggregation)
     eeg = pd.read_csv(
@@ -345,38 +463,52 @@ def main() -> None:
     )
     eeg["date_only"] = eeg["TimeStamp"].dt.date
 
-    if rem_df.empty:
-        raise ValueError("No REM episodes to plot after filtering.")
-
-    session_start_hms = str(rem_df["session_start_boston"].iloc[0])
-    session_end_hms = str(rem_df["session_end_boston"].iloc[0])
-    session_start_sod = parse_hms_to_seconds(session_start_hms)
-    session_end_sod = parse_hms_to_seconds(session_end_hms)
-    if session_start_sod is None or session_end_sod is None:
-        raise ValueError("Invalid session start/end times in rem_episodes.csv")
-
-    # Fast vectorized session mask (handles midnight wrap).
-    if session_end_sod >= session_start_sod:
-        in_session = (eeg["sec_of_day"] >= session_start_sod) & (eeg["sec_of_day"] <= session_end_sod)
+    no_rem_mode = rem_df.empty
+    if no_rem_mode:
+        # Fallback mode: still plot EEG even when REM rows are absent.
+        # Use full EEG file interval as session window.
+        session_start_hms = eeg["TimeStamp"].iloc[0].strftime("%H:%M:%S")
+        session_end_hms = eeg["TimeStamp"].iloc[-1].strftime("%H:%M:%S")
+        session_start_sod = parse_hms_to_seconds(session_start_hms)
+        session_end_sod = parse_hms_to_seconds(session_end_hms)
+        if session_start_sod is None or session_end_sod is None:
+            raise ValueError("Invalid EEG timestamp bounds.")
+        sess = eeg.copy()
+        elapsed = (sess["TimeStamp"] - sess["TimeStamp"].iloc[0]).dt.total_seconds()
+        sess["elapsed_sec"] = elapsed.astype(float)
     else:
-        in_session = (eeg["sec_of_day"] >= session_start_sod) | (eeg["sec_of_day"] <= session_end_sod)
-    sess = eeg[in_session].copy()
-    if sess.empty:
-        raise ValueError("No EEG samples found in selected session interval.")
+        session_start_hms = str(rem_df["session_start_boston"].iloc[0])
+        session_end_hms = str(rem_df["session_end_boston"].iloc[0])
+        session_start_sod = parse_hms_to_seconds(session_start_hms)
+        session_end_sod = parse_hms_to_seconds(session_end_hms)
+        if session_start_sod is None or session_end_sod is None:
+            raise ValueError("Invalid session start/end times in rem_episodes.csv")
 
-    # Elapsed seconds since session start (raw sample-level).
-    sess["elapsed_sec"] = np.where(
-        sess["sec_of_day"] >= session_start_sod,
-        sess["sec_of_day"] - session_start_sod,
-        sess["sec_of_day"] + SECONDS_PER_DAY - session_start_sod,
-    )
+        # Fast vectorized session mask (handles midnight wrap).
+        if session_end_sod >= session_start_sod:
+            in_session = (eeg["sec_of_day"] >= session_start_sod) & (eeg["sec_of_day"] <= session_end_sod)
+        else:
+            in_session = (eeg["sec_of_day"] >= session_start_sod) | (eeg["sec_of_day"] <= session_end_sod)
+        sess = eeg[in_session].copy()
+        if sess.empty:
+            raise ValueError("No EEG samples found in selected session interval.")
+
+        # Elapsed seconds since session start (raw sample-level).
+        sess["elapsed_sec"] = np.where(
+            sess["sec_of_day"] >= session_start_sod,
+            sess["sec_of_day"] - session_start_sod,
+            sess["sec_of_day"] + SECONDS_PER_DAY - session_start_sod,
+        )
     if args.max_points > 0 and len(sess) > args.max_points:
         stride = int(math.ceil(len(sess) / float(args.max_points)))
         sess = sess.iloc[::stride].copy()
 
     cue_color = {"disruptive": "red", "induction": "green"}
     rem_episode_ids = set(rem_df["episode_index"].astype(int).tolist())
-    cues_sess = cue_df[cue_df["episode_index"].astype(int).isin(rem_episode_ids)].copy()
+    if no_rem_mode:
+        cues_sess = cue_df.copy()
+    else:
+        cues_sess = cue_df[cue_df["episode_index"].astype(int).isin(rem_episode_ids)].copy()
 
     if args.plot_mode in ("overview", "both"):
         fig, ax = plt.subplots(figsize=(18, 7))
@@ -434,6 +566,8 @@ def main() -> None:
         fig.savefig(overview_output_png, dpi=120)
         print(f"Saved plot to {overview_output_png}")
         print(f"REM rows considered: {len(rem_df)}")
+        if no_rem_mode:
+            print("No REM rows found: plotted full EEG session without REM overlays.")
         print(f"Session points plotted: {len(sess)}")
         plt.close(fig)
 
