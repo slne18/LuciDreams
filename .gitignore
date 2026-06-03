@@ -30,3 +30,7 @@ __pycache__/
 ## Local EEG raw exports
 plot/EEG_*.csv
 plot/EEG/*.csv
+
+## Generated motion exports
+plot/data_night/motion_per_second_series.csv
+plot/data_night/motion_smoothed_series.csv
