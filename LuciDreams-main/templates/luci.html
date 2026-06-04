@@ -783,10 +783,12 @@
   const NIGHT_MAX_TRAINS = 5;
   const REM_EPISODE_MAX_TRAINS = 3;           // Per-REM-episode cap 
   const REFRACTORY_PERIOD_SEC = 300;          // 5 min between trains
-  const AROUSAL_CHECK_WINDOW_SEC = 5;          // Movement within 5s after induction cue (raw motion; for arousal only)
-  const AROUSAL_POST_CUE_WINDOW_SEC = 1;      // Compare raw motion in the 1s after cue vs REM baseline percentile
-  const INDUCTION_AROUSAL_RAW_PERCENTILE = 0.90;
-  const DISRUPTIVE_AROUSAL_RAW_PERCENTILE = 0.90;
+  const AROUSAL_CHECK_WINDOW_SEC = 3;          // Minimum delay before next induction cue check
+  const AROUSAL_POST_CUE_WINDOW_SEC = 2;      // Compare raw motion in the 2s after cue vs REM baseline percentile
+  const INDUCTION_MIN_GAP_SEC = Math.max(AROUSAL_CHECK_WINDOW_SEC, AROUSAL_POST_CUE_WINDOW_SEC);
+  const INDUCTION_AROUSAL_RAW_PERCENTILE = 0.95;
+  const DISRUPTIVE_AROUSAL_RAW_PERCENTILE = 0.95;
+  const MIN_AROUSAL_RAW = 0.03;               // Absolute floor for arousal detection
   const USER_MIN_VOLUME_CEILING_DELTA = 0.20;
   const CALIBRATION_VOLUME_STEP = 1 / 16; // iOS hardware volume increments are typically 16 steps
   // Unified app test mode switch:
@@ -801,6 +803,8 @@
   const DISRUPTIVE_PERIOD_SEC = 120;
   const DISRUPTIVE_SOUND_DURATION_MS = 3000;    // disruptive beep lasts 3 seconds
   const DISRUPTIVE_SECOND_CUE_OFFSET_MS = 60000; // disruptive beep/vibration second cue at +60s
+  const DISRUPTIVE_SECOND_BEEP_MIN = 0.60;       // minimum for second disruptive beep (60%)
+  const DISRUPTIVE_SECOND_BEEP_MAX = 1.00;       // maximum for second disruptive beep (100%)
   const DISRUPTIVE_WAVE_VOLUME = 0.15;            // theta/gamma disruptive wave volume fixed at 15%
   const DISRUPTIVE_THETA_ASSET = 'theta.mp3';
   const DISRUPTIVE_GAMMA_ASSET = 'gamma.mp3';
@@ -812,16 +816,18 @@
   const DISRUPTIVE_VIBRATION_MS = 300;       // per burst
   const DISRUPTIVE_VIBRATION_GAP_MS = 1000;   // gap between bursts
   const LD_INDUCTION_START_VOLUME = 0;         // induction starts at 0%
+  const NEXT_TRAIN_INDUCTION_CAP_MIN = 0.05;   // floor for next-train induction cap (v5)
+  const NEXT_TRAIN_INDUCTION_CAP_MAX = 0.60;   // ceiling for next-train induction cap (v60)
   // Full induction sequence:
-  // - 0 -> 10% with 0.5% steps
+  // - 0 -> 10% with 1% steps
   // - 15 -> 100% with 5% steps
   const INDUCTION_VOLUME_LEVELS = (function() {
     var levels = [];
-    for (var i = 0; i <= 20; i++) levels.push(i / 200);
+    for (var i = 0; i <= 10; i++) levels.push(i / 100);
     for (var j = 15; j <= 100; j += 5) levels.push(j / 100);
     return levels;
   })();
-  const LD_BEEP_DURATION_MS = 1000;
+  const LD_BEEP_DURATION_MS = 2000;
   // App-wide cue
   const DEFAULT_BEEP_DURATION_MS = 150;
   const CONDITION_POOL = APP_TEST_MODE ? [4, 5] : [0, 1, 2, 3, 4, 5, 6, 7];
@@ -1302,13 +1308,14 @@
     state.disruptiveTimeouts.push(setTimeout(endDisruptive, endMs));
     if (c === 1) {
       trainRecord.disruptive.took_place = true;
-      var rampLevels = (INDUCTION_VOLUME_LEVELS || []).slice();
-      var rampStepMs = 1000;
-      var rampMaxSteps = Math.min(rampLevels.length, Math.floor(DISRUPTIVE_SECOND_CUE_OFFSET_MS / rampStepMs));
+      var rampStepMs = 4000; // 3s beep + 1s silence
+      var rampMaxSteps = Math.max(1, Math.floor(DISRUPTIVE_SECOND_CUE_OFFSET_MS / rampStepMs));
       state.disruptiveRampActive = true;
       trainRecord.disruptive.params = {
         mode: 'ramp_find_arousal',
         ramp_step_ms: rampStepMs,
+        ramp_start_volume: 0.10,
+        ramp_increment_per_step: 0.10,
         ramp_levels_count: rampMaxSteps,
         duration_ms: DISRUPTIVE_SOUND_DURATION_MS,
         second_cue_at_ms: DISRUPTIVE_SECOND_CUE_OFFSET_MS
@@ -1316,7 +1323,7 @@
       for (var ri = 0; ri < rampMaxSteps; ri++) {
         (function(levelIdx) {
           var startMs = levelIdx * rampStepMs;
-          var vol = Math.max(0, Math.min(1, rampLevels[levelIdx] || 0));
+          var vol = Math.max(0, Math.min(1, 0.10 + (0.10 * levelIdx)));
           state.disruptiveTimeouts.push(setTimeout(function() {
             if (!state.inRemEpisode || state.trainPhase !== 'disruptive' || !state.disruptiveRampActive) return;
             state.disruptiveRampCandidateVolume = vol;
@@ -1332,7 +1339,8 @@
       state.disruptiveTimeouts.push(setTimeout(function() {
         if (!state.inRemEpisode || state.trainPhase !== 'disruptive') return;
         var found = state.disruptiveRampFoundVolume;
-        var secondVol = found != null ? getRoundedUpBeepVariantVolume(Math.min(1, found * 1.05)) : 0.35;
+        var secondVol = found != null ? getRoundedUpBeepVariantVolume(Math.min(1, found * 1.05)) : 0.60;
+        secondVol = Math.max(DISRUPTIVE_SECOND_BEEP_MIN, Math.min(DISRUPTIVE_SECOND_BEEP_MAX, secondVol));
         trainRecord.disruptive.params.found_arousal_volume = found;
         trainRecord.disruptive.params.second_cue_volume = secondVol;
         state.disruptiveRampActive = false;
@@ -1777,7 +1785,8 @@
     var startVol = getInductionStartVolume();
     var cap = 1;
     if (state.nextTrainInductionCap != null && state.nextTrainInductionCap > 0) {
-      cap = Math.max(startVol, Math.min(1, state.nextTrainInductionCap));
+      var boundedNext = Math.max(NEXT_TRAIN_INDUCTION_CAP_MIN, Math.min(NEXT_TRAIN_INDUCTION_CAP_MAX, state.nextTrainInductionCap));
+      cap = Math.max(startVol, Math.min(1, boundedNext));
     }
     // apply only to immediate next train
     state.nextTrainInductionCap = null;
@@ -2855,7 +2864,7 @@ function playFixedBeep75(durationMs, onEnded) {
         }
         if (secSinceDisruptiveCue === AROUSAL_POST_CUE_WINDOW_SEC && state.lastDisruptiveCueBaselineRawQ != null && state.lastDisruptiveCuePostRawValues.length >= AROUSAL_POST_CUE_WINDOW_SEC) {
           var disruptivePostMetric = state.lastDisruptiveCuePostRawValues.reduce(function(a, b) { return a + b; }, 0) / state.lastDisruptiveCuePostRawValues.length;
-          if (disruptivePostMetric > state.lastDisruptiveCueBaselineRawQ) {
+          if (disruptivePostMetric > state.lastDisruptiveCueBaselineRawQ && disruptivePostMetric >= MIN_AROUSAL_RAW) {
             if (state.tonight_condition === 1 && state.disruptiveRampActive && state.disruptiveRampFoundVolume == null) {
               state.disruptiveRampFoundVolume = state.disruptiveRampCandidateVolume;
               state.disruptiveRampActive = false;
@@ -2889,7 +2898,7 @@ function playFixedBeep75(durationMs, onEnded) {
         }
         if (secSinceCue === AROUSAL_POST_CUE_WINDOW_SEC && state.lastInductionCueBaselineRawAvg != null && state.lastInductionCuePostRawValues.length >= AROUSAL_POST_CUE_WINDOW_SEC) {
           var inductionPostMetric = state.lastInductionCuePostRawValues.reduce(function(a, b) { return a + b; }, 0) / state.lastInductionCuePostRawValues.length;
-          if (inductionPostMetric > state.lastInductionCueBaselineRawAvg) {
+          if (inductionPostMetric > state.lastInductionCueBaselineRawAvg && inductionPostMetric >= MIN_AROUSAL_RAW) {
             var train = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
             if (train && train.induction.cues.length) {
               train.induction.cues[train.induction.cues.length - 1].arousal_detected = true;
@@ -2897,7 +2906,8 @@ function playFixedBeep75(durationMs, onEnded) {
               state.arousal_threshold = state.inductionVolume;
               // Next train in this REM episode: cap induction at 95% of the arousal volume.
               var nextCap = getRoundedDownBeepVariantVolume(Math.min(1, state.inductionVolume * 0.95));
-              state.nextTrainInductionCap = Math.max(getInductionStartVolume(), nextCap);
+              var boundedNextCap = Math.max(NEXT_TRAIN_INDUCTION_CAP_MIN, Math.min(NEXT_TRAIN_INDUCTION_CAP_MAX, nextCap));
+              state.nextTrainInductionCap = Math.max(getInductionStartVolume(), boundedNextCap);
               saveArousalThreshold(state.arousal_threshold);
               console.log('Arousal threshold set (post-cue raw > REM raw q90):', state.arousal_threshold, 'postCueMetric=', inductionPostMetric, 'baselineQ=', state.lastInductionCueBaselineRawAvg);
             }
@@ -2938,7 +2948,7 @@ function playFixedBeep75(durationMs, onEnded) {
           }
           if (state.trainPhase === 'induction' && !state.soundRunning && state.lastInductionPlayEpoch != null) {
             var elapsed = state.secondsRecorded - state.lastInductionPlayEpoch;
-            if (elapsed >= AROUSAL_CHECK_WINDOW_SEC) {
+            if (elapsed >= INDUCTION_MIN_GAP_SEC) {
               var train2 = state.currentEpisodeTrains.length ? state.currentEpisodeTrains[state.currentEpisodeTrains.length - 1] : null;
               if (train2 && train2.induction.arousal_threshold == null) {
                 var nextVol = getNextInductionVolume(state.inductionVolume);
