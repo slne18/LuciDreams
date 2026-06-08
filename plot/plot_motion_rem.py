@@ -9,6 +9,7 @@ REM episode timeline plot (same style intent as rem_cutoff_plot):
 
 import argparse
 import csv
+import hashlib
 import math
 import os
 import re
@@ -45,6 +46,86 @@ def parse_hms(value: str) -> Optional[datetime]:
         return datetime.strptime(value, "%H:%M:%S")
     except ValueError:
         return None
+
+
+def hms_to_seconds(value: Optional[str]) -> Optional[int]:
+    if not value:
+        return None
+    try:
+        dt = datetime.strptime(str(value), "%H:%M:%S")
+        return dt.hour * 3600 + dt.minute * 60 + dt.second
+    except Exception:
+        return None
+
+
+def infer_session_duration_seconds(
+    cutoff_rows: List[Dict[str, str]],
+    sel_pid: str,
+    sel_start: str,
+    sel_night: Optional[int],
+) -> Optional[int]:
+    """Infer session duration from start/end clocks (fallback to second_index span)."""
+    end_clock: Optional[str] = None
+    min_sec: Optional[int] = None
+    max_sec: Optional[int] = None
+    for row in cutoff_rows:
+        if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
+            continue
+        row_night = as_int(row.get("night_number", ""))
+        if sel_night is not None and row_night != sel_night:
+            continue
+        if not end_clock:
+            ec = (row.get("session_end_boston") or "").strip()
+            if ec:
+                end_clock = ec
+        sec = as_int(row.get("second_index", ""))
+        if sec is not None:
+            min_sec = sec if min_sec is None else min(min_sec, sec)
+            max_sec = sec if max_sec is None else max(max_sec, sec)
+
+    start_s = hms_to_seconds(sel_start)
+    end_s = hms_to_seconds(end_clock)
+    if start_s is not None and end_s is not None:
+        if end_s < start_s:
+            end_s += 24 * 3600
+        return int(end_s - start_s + 1)
+
+    if min_sec is not None and max_sec is not None:
+        return int(max_sec - min_sec + 1)
+    return None
+
+
+def session_motion_signature(
+    cutoff_rows: List[Dict[str, str]],
+    sel_pid: str,
+    sel_start: str,
+    sel_night: Optional[int],
+) -> str:
+    """
+    Build deterministic signature from session motion series.
+    Used to skip duplicate exports of same PID/night data.
+    """
+    points: List[Tuple[int, str]] = []
+    for row in cutoff_rows:
+        if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
+            continue
+        row_night = as_int(row.get("night_number", ""))
+        if sel_night is not None and row_night != sel_night:
+            continue
+        sec = as_int(row.get("second_index", ""))
+        if sec is None:
+            continue
+        raw_val = row.get("motion_smoothed")
+        if raw_val is None or str(raw_val).strip() == "":
+            raw_val = row.get("motion_per_second", "")
+        points.append((sec, str(raw_val)))
+
+    points.sort(key=lambda x: x[0])
+    h = hashlib.sha1()
+    h.update(f"{sel_pid}|{sel_night}|{len(points)}".encode("utf-8"))
+    for sec, v in points:
+        h.update(f"{sec}:{v}|".encode("utf-8"))
+    return h.hexdigest()
 
 
 def choose_session(
@@ -140,6 +221,20 @@ def safe_slug(value: Optional[str]) -> str:
     return s or "unknown"
 
 
+def app_stillness_cutoff(series_vals: List[float], stillness_percent: float) -> float:
+    """
+    Match app logic in getStillnessCutoffFromSeries():
+    idx = floor((1 - stillness_percent) * (len(sorted)-1))
+    """
+    if not series_vals:
+        raise ValueError("Empty series for stillness cutoff.")
+    sorted_vals = sorted(series_vals)
+    p = max(0.0, min(1.0, 1.0 - float(stillness_percent)))
+    idx = int(math.floor(p * (len(sorted_vals) - 1)))
+    idx = max(0, min(len(sorted_vals) - 1, idx))
+    return float(sorted_vals[idx])
+
+
 def build_session_output_paths(
     sel_pid: str,
     sel_night: Optional[int],
@@ -222,7 +317,7 @@ def plot_one_session(
         if v is None or not np.isfinite(v):
             continue
         history_vals.append(float(v))
-        q_by_sec[sec] = float(np.quantile(history_vals, 1.0 - pct))
+        q_by_sec[sec] = app_stillness_cutoff(history_vals, pct)
 
     # Parse REM episodes for selected session.
     rem_eps = []
@@ -502,9 +597,36 @@ def main() -> None:
         print(f"Found {len(sessions)} matching sessions.")
         success_count = 0
         skipped_count = 0
+        skipped_short_night_count = 0
+        skipped_duplicate_count = 0
+        seen_signatures: set = set()
         failed: List[Tuple[str, str, Optional[int], str]] = []
         for sel_pid, sel_start, sel_night in sessions:
             try:
+                dur_sec = infer_session_duration_seconds(cutoff_rows, sel_pid, sel_start, sel_night)
+                if dur_sec is not None and dur_sec < FOUR_HOURS_SECONDS:
+                    skipped_count += 1
+                    skipped_short_night_count += 1
+                    print(
+                        f"Skipping short session (<4h): pid={sel_pid}, night_number={sel_night}, "
+                        f"session_start_boston={sel_start}, duration_sec={dur_sec}"
+                    )
+                    continue
+
+                sig = session_motion_signature(cutoff_rows, sel_pid, sel_start, sel_night)
+                # De-duplicate across exports of the same underlying session data,
+                # even if night_number differs (common with backup/re-export docs).
+                sig_key = (sel_pid, sig)
+                if sig_key in seen_signatures:
+                    skipped_count += 1
+                    skipped_duplicate_count += 1
+                    print(
+                        f"Skipping duplicate export session: pid={sel_pid}, night_number={sel_night}, "
+                        f"session_start_boston={sel_start}"
+                    )
+                    continue
+                seen_signatures.add(sig_key)
+
                 if args.only_missing:
                     expected_overview, expected_per_rem = build_session_output_paths(sel_pid, sel_night, sel_start, args)
                     expected_paths = [p for p in [expected_overview, expected_per_rem] if p]
@@ -532,7 +654,10 @@ def main() -> None:
                     f"Skipping session due to error: pid={sel_pid}, night_number={sel_night}, "
                     f"session_start_boston={sel_start} | {err_msg}"
                 )
-        print(f"Completed all-sessions run: {success_count} succeeded, {skipped_count} skipped, {len(failed)} failed.")
+        print(
+            f"Completed all-sessions run: {success_count} succeeded, {skipped_count} skipped, {len(failed)} failed. "
+            f"(short<{4}h: {skipped_short_night_count}, duplicate: {skipped_duplicate_count})"
+        )
         if failed:
             print("Failed sessions:")
             for pid, start, night, err in failed:
