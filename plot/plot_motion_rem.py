@@ -95,6 +95,25 @@ def infer_session_duration_seconds(
     return None
 
 
+def infer_session_end_clock(
+    cutoff_rows: List[Dict[str, str]],
+    sel_pid: str,
+    sel_start: str,
+    sel_night: Optional[int],
+) -> Optional[str]:
+    """Return session_end_boston (HH:MM:SS) when available."""
+    for row in cutoff_rows:
+        if row.get("pid") != sel_pid or row.get("session_start_boston") != sel_start:
+            continue
+        row_night = as_int(row.get("night_number", ""))
+        if sel_night is not None and row_night != sel_night:
+            continue
+        end_clock = (row.get("session_end_boston") or "").strip()
+        if end_clock:
+            return end_clock
+    return None
+
+
 def session_motion_signature(
     cutoff_rows: List[Dict[str, str]],
     sel_pid: str,
@@ -122,7 +141,9 @@ def session_motion_signature(
 
     points.sort(key=lambda x: x[0])
     h = hashlib.sha1()
-    h.update(f"{sel_pid}|{sel_night}|{len(points)}".encode("utf-8"))
+    # Intentionally do not include night_number: duplicate exports can carry
+    # different night labels for the exact same underlying session data.
+    h.update(f"{sel_pid}|{len(points)}".encode("utf-8"))
     for sec, v in points:
         h.update(f"{sec}:{v}|".encode("utf-8"))
     return h.hexdigest()
@@ -259,6 +280,38 @@ def build_session_output_paths(
             per_rem_out = os.path.join(pid_dir, f"motion_per_rem_{sel_pid}{suffix}_{start_slug}.png")
 
     return overview_out, per_rem_out
+
+
+def has_existing_plot_for_time_window(
+    sel_pid: str,
+    sel_start: str,
+    args: argparse.Namespace,
+) -> bool:
+    """
+    Check if this PID/time window is already plotted, independent of night_number.
+    We key on session_start_boston because duplicated exports often only differ
+    by night label while preserving identical session clocks.
+    """
+    pid_dir = os.path.join(MOTION_PLOTS_DIR, safe_slug(sel_pid))
+    if not os.path.isdir(pid_dir):
+        return False
+    start_slug = safe_slug(sel_start)
+    has_overview = False
+    has_per_rem = False
+    for name in os.listdir(pid_dir):
+        if not name.endswith(".png"):
+            continue
+        if start_slug not in name:
+            continue
+        if name.startswith(f"motion_overview_{sel_pid}_"):
+            has_overview = True
+        if name.startswith(f"motion_per_rem_{sel_pid}_"):
+            has_per_rem = True
+    if args.plot_mode == "overview":
+        return has_overview
+    if args.plot_mode == "per-rem":
+        return has_per_rem
+    return has_overview and has_per_rem
 
 
 def plot_one_session(
@@ -599,10 +652,24 @@ def main() -> None:
         skipped_count = 0
         skipped_short_night_count = 0
         skipped_duplicate_count = 0
+        skipped_existing_time_window_count = 0
         seen_signatures: set = set()
+        seen_time_windows: set = set()
         failed: List[Tuple[str, str, Optional[int], str]] = []
         for sel_pid, sel_start, sel_night in sessions:
             try:
+                sel_end = infer_session_end_clock(cutoff_rows, sel_pid, sel_start, sel_night)
+                time_key = (sel_pid, safe_slug(sel_start), safe_slug(sel_end))
+                if time_key in seen_time_windows:
+                    skipped_count += 1
+                    skipped_duplicate_count += 1
+                    print(
+                        f"Skipping duplicate time window: pid={sel_pid}, night_number={sel_night}, "
+                        f"session_start_boston={sel_start}, session_end_boston={sel_end}"
+                    )
+                    continue
+                seen_time_windows.add(time_key)
+
                 dur_sec = infer_session_duration_seconds(cutoff_rows, sel_pid, sel_start, sel_night)
                 if dur_sec is not None and dur_sec < FOUR_HOURS_SECONDS:
                     skipped_count += 1
@@ -628,6 +695,14 @@ def main() -> None:
                 seen_signatures.add(sig_key)
 
                 if args.only_missing:
+                    if has_existing_plot_for_time_window(sel_pid, sel_start, args):
+                        skipped_count += 1
+                        skipped_existing_time_window_count += 1
+                        print(
+                            f"Skipping existing plotted time window: pid={sel_pid}, night_number={sel_night}, "
+                            f"session_start_boston={sel_start}"
+                        )
+                        continue
                     expected_overview, expected_per_rem = build_session_output_paths(sel_pid, sel_night, sel_start, args)
                     expected_paths = [p for p in [expected_overview, expected_per_rem] if p]
                     if expected_paths and all(os.path.exists(p) for p in expected_paths):
@@ -656,7 +731,8 @@ def main() -> None:
                 )
         print(
             f"Completed all-sessions run: {success_count} succeeded, {skipped_count} skipped, {len(failed)} failed. "
-            f"(short<{4}h: {skipped_short_night_count}, duplicate: {skipped_duplicate_count})"
+            f"(short<{4}h: {skipped_short_night_count}, duplicate: {skipped_duplicate_count}, "
+            f"existing-window: {skipped_existing_time_window_count})"
         )
         if failed:
             print("Failed sessions:")
