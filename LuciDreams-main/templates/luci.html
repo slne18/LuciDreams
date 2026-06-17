@@ -805,7 +805,8 @@
   const DISRUPTIVE_SECOND_CUE_OFFSET_MS = 60000; // disruptive beep/vibration second cue at +60s
   const DISRUPTIVE_SECOND_BEEP_MIN = 0.60;       // minimum for second disruptive beep (60%)
   const DISRUPTIVE_SECOND_BEEP_MAX = 1.00;       // maximum for second disruptive beep (100%)
-  const DISRUPTIVE_WAVE_VOLUME = 0.15;            // theta/gamma disruptive wave volume fixed at 15%
+  const DISRUPTIVE_WAVE_MAX_VOLUME = 0.60;        // theta/gamma disruptive ramp ceiling (reached at end of 2-min phase)
+  const DISRUPTIVE_WAVE_RAMP_STEP_PER_2SEC = DISRUPTIVE_WAVE_MAX_VOLUME / Math.floor(DISRUPTIVE_PERIOD_SEC / 2);
   const DISRUPTIVE_THETA_ASSET = 'theta.mp3';
   const DISRUPTIVE_GAMMA_ASSET = 'gamma.mp3';
   const FIXED_BEEP_75_TRAINING_ASSET_ID = 'beep_v25';
@@ -1253,6 +1254,12 @@
     if (!state.disruptiveWaveHtmlAudio) return;
     state.disruptiveWaveHtmlAudio.volume = v;
   }
+  // Resets disruptive arousal window (used after each theta/gamma volume step).
+  function resetDisruptiveArousalWindow() {
+    state.lastDisruptiveCueEpoch = state.secondsRecorded;
+    state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
+    state.lastDisruptiveCuePostRawValues = [];
+  }
 
   // Starts train.
   function startTrain() {
@@ -1386,71 +1393,78 @@
         });
       }, DISRUPTIVE_LIGHT_OFFSET_MS));
     } else if (c === 6) {
-      // Theta (8Hz): ramp from 0 by +1% every 2s. After disruptive arousal, hold at 95% of that volume.
-      state.lastDisruptiveCueEpoch = state.secondsRecorded;
-      state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
-      state.lastDisruptiveCuePostRawValues = [];
+      // Theta (8Hz): ramp from 0 to 60% over ~2min (+1% every 2s). Arousal re-checked after each step.
+      resetDisruptiveArousalWindow();
       state.disruptiveWaveRampActive = true;
       state.disruptiveWaveCurrentVolume = 0;
       state.disruptiveWaveArousalVolume = null;
-      state.disruptiveWaveTargetVolume = 1;
+      state.disruptiveWaveTargetVolume = DISRUPTIVE_WAVE_MAX_VOLUME;
       startDisruptiveWaveNoise(8, 0, trainRecord);
       trainRecord.disruptive.params = {
         type: 'continuous_noise_ramp',
         wave_hz: 8,
         asset: DISRUPTIVE_THETA_ASSET,
-        ramp_step_per_2sec: 0.01,
+        ramp_step_per_2sec: DISRUPTIVE_WAVE_RAMP_STEP_PER_2SEC,
+        max_volume: DISRUPTIVE_WAVE_MAX_VOLUME,
         start_volume: 0,
+        arousal_check_mode: 'per_ramp_step',
         target_mode_after_arousal: '0.95x_arousal'
       };
-      for (var s6 = 1; s6 <= Math.floor(endMs / 2000); s6++) {
-        (function(stepSec6) {
+      var waveRampSteps6 = Math.floor(endMs / 2000);
+      for (var s6 = 1; s6 <= waveRampSteps6; s6++) {
+        (function(stepIdx6) {
+          // First step at 3s so the initial 0% window can complete its 2s arousal check.
+          var stepDelayMs6 = 3000 + ((stepIdx6 - 1) * 2000);
           state.disruptiveTimeouts.push(setTimeout(function() {
             if (!state.inRemEpisode || state.trainPhase !== 'disruptive' || !state.disruptiveWaveRampActive) return;
-            var maxVol6 = (state.disruptiveWaveArousalVolume == null) ? 1 : state.disruptiveWaveTargetVolume;
-            var nextVol6 = Math.min(maxVol6, state.disruptiveWaveCurrentVolume + 0.01);
+            var maxVol6 = (state.disruptiveWaveArousalVolume == null) ? DISRUPTIVE_WAVE_MAX_VOLUME : state.disruptiveWaveTargetVolume;
+            var nextVol6 = Math.min(maxVol6, state.disruptiveWaveCurrentVolume + DISRUPTIVE_WAVE_RAMP_STEP_PER_2SEC);
             if (nextVol6 > state.disruptiveWaveCurrentVolume + 1e-6) {
               state.disruptiveWaveCurrentVolume = nextVol6;
               setDisruptiveWaveVolume(nextVol6);
+              if (state.disruptiveWaveArousalVolume == null) resetDisruptiveArousalWindow();
             }
             if (state.disruptiveWaveArousalVolume != null && state.disruptiveWaveCurrentVolume >= state.disruptiveWaveTargetVolume - 1e-6) {
               state.disruptiveWaveRampActive = false;
             }
-          }, stepSec6 * 2000));
+          }, stepDelayMs6));
         })(s6);
       }
     } else if (c === 7) {
-      // Gamma (30Hz): ramp from 0 by +1% every 2s. After disruptive arousal, hold at 95% of that volume.
-      state.lastDisruptiveCueEpoch = state.secondsRecorded;
-      state.lastDisruptiveCueBaselineRawQ = getPercentileCutoffFromSeries(state.remEpisodeRawMotionValues, DISRUPTIVE_AROUSAL_RAW_PERCENTILE);
-      state.lastDisruptiveCuePostRawValues = [];
+      // Gamma (30Hz): ramp from 0 to 60% over ~2min (+1% every 2s). Arousal re-checked after each step.
+      resetDisruptiveArousalWindow();
       state.disruptiveWaveRampActive = true;
       state.disruptiveWaveCurrentVolume = 0;
       state.disruptiveWaveArousalVolume = null;
-      state.disruptiveWaveTargetVolume = 1;
+      state.disruptiveWaveTargetVolume = DISRUPTIVE_WAVE_MAX_VOLUME;
       startDisruptiveWaveNoise(30, 0, trainRecord);
       trainRecord.disruptive.params = {
         type: 'continuous_noise_ramp',
         wave_hz: 30,
         asset: DISRUPTIVE_GAMMA_ASSET,
-        ramp_step_per_2sec: 0.01,
+        ramp_step_per_2sec: DISRUPTIVE_WAVE_RAMP_STEP_PER_2SEC,
+        max_volume: DISRUPTIVE_WAVE_MAX_VOLUME,
         start_volume: 0,
+        arousal_check_mode: 'per_ramp_step',
         target_mode_after_arousal: '0.95x_arousal'
       };
-      for (var s7 = 1; s7 <= Math.floor(endMs / 2000); s7++) {
-        (function(stepSec7) {
+      var waveRampSteps7 = Math.floor(endMs / 2000);
+      for (var s7 = 1; s7 <= waveRampSteps7; s7++) {
+        (function(stepIdx7) {
+          var stepDelayMs7 = 3000 + ((stepIdx7 - 1) * 2000);
           state.disruptiveTimeouts.push(setTimeout(function() {
             if (!state.inRemEpisode || state.trainPhase !== 'disruptive' || !state.disruptiveWaveRampActive) return;
-            var maxVol7 = (state.disruptiveWaveArousalVolume == null) ? 1 : state.disruptiveWaveTargetVolume;
-            var nextVol7 = Math.min(maxVol7, state.disruptiveWaveCurrentVolume + 0.01);
+            var maxVol7 = (state.disruptiveWaveArousalVolume == null) ? DISRUPTIVE_WAVE_MAX_VOLUME : state.disruptiveWaveTargetVolume;
+            var nextVol7 = Math.min(maxVol7, state.disruptiveWaveCurrentVolume + DISRUPTIVE_WAVE_RAMP_STEP_PER_2SEC);
             if (nextVol7 > state.disruptiveWaveCurrentVolume + 1e-6) {
               state.disruptiveWaveCurrentVolume = nextVol7;
               setDisruptiveWaveVolume(nextVol7);
+              if (state.disruptiveWaveArousalVolume == null) resetDisruptiveArousalWindow();
             }
             if (state.disruptiveWaveArousalVolume != null && state.disruptiveWaveCurrentVolume >= state.disruptiveWaveTargetVolume - 1e-6) {
               state.disruptiveWaveRampActive = false;
             }
-          }, stepSec7 * 2000));
+          }, stepDelayMs7));
         })(s7);
       }
     }
