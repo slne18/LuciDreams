@@ -23,10 +23,11 @@ import numpy as np
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_NIGHT_DIR = os.path.join(BASE_DIR, "data_night")
-DEFAULT_CUTOFF_CSV = os.path.join(DATA_NIGHT_DIR, "motion_smoothed_series.csv")
-DEFAULT_REM_CSV = os.path.join(DATA_NIGHT_DIR, "rem_episodes.csv")
-DEFAULT_CUE_CSV = os.path.join(DATA_NIGHT_DIR, "cue_events.csv")
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+DEFAULT_DATA_DIR = os.path.join(PROJECT_ROOT, "data_prep", "output")
+DEFAULT_CUTOFF_CSV = os.path.join(DEFAULT_DATA_DIR, "motion_smoothed_series.csv")
+DEFAULT_REM_CSV = os.path.join(DEFAULT_DATA_DIR, "rem_episodes.csv")
+DEFAULT_CUE_CSV = os.path.join(DEFAULT_DATA_DIR, "cue_events.csv")
 MOTION_PLOTS_DIR = os.path.join(BASE_DIR, "motion_plots")
 FOUR_HOURS_SECONDS = 4 * 60 * 60
 # For smoothed series indexed from first valid 5-minute sample,

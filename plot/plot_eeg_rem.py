@@ -23,9 +23,10 @@ import pandas as pd
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_NIGHT_DIR = os.path.join(BASE_DIR, "data_night")
-DEFAULT_REM_CSV = os.path.join(DATA_NIGHT_DIR, "rem_episodes.csv")
-DEFAULT_CUE_CSV = os.path.join(DATA_NIGHT_DIR, "cue_events.csv")
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+DEFAULT_DATA_DIR = os.path.join(PROJECT_ROOT, "data_prep", "output")
+DEFAULT_REM_CSV = os.path.join(DEFAULT_DATA_DIR, "rem_episodes.csv")
+DEFAULT_CUE_CSV = os.path.join(DEFAULT_DATA_DIR, "cue_events.csv")
 EEG_DATA_DIR = os.path.join(BASE_DIR, "EEG")
 EEG_PLOTS_DIR = os.path.join(BASE_DIR, "eeg_plots")
 DEFAULT_OUTPUT_TEMPLATE = os.path.join(EEG_PLOTS_DIR, "eeg_rem_phases_{pid}.png")

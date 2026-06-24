@@ -21,14 +21,19 @@ import numpy as np
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_NIGHT_DIR = os.path.join(BASE_DIR, "data_night")
-DEFAULT_MOTION_CSV = os.path.join(DATA_NIGHT_DIR, "motion_per_second_series.csv")
-DEFAULT_OUT_CSV = os.path.join(DATA_NIGHT_DIR, "sensor_sampling_summary.csv")
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+DEFAULT_DATA_DIR = os.path.join(PROJECT_ROOT, "data_prep", "output")
+DEFAULT_MOTION_CSV = os.path.join(DEFAULT_DATA_DIR, "motion_per_second_series.csv")
+DEFAULT_OUT_CSV = os.path.join(BASE_DIR, "data_night", "sensor_sampling_summary.csv")
 DEFAULT_OUT_DIR = os.path.join(BASE_DIR, "sampling_plots")
 
-LOW_HZ_THRESHOLD = 5.0
-STALL_DT_MS = 500.0
-SEVERE_DT_MS = 1000.0
+from export_data import (  # noqa: E402
+    LOW_HZ_THRESHOLD,
+    SAMPLING_SUMMARY_FIELDS,
+    SEVERE_DT_MS,
+    STALL_DT_MS,
+    build_sensor_sampling_summary_row,
+)
 
 
 def as_int(value: str) -> Optional[int]:
@@ -63,36 +68,6 @@ def hms_anchor(value: str) -> Optional[datetime]:
 
 def safe_name(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "unknown"))
-
-
-def quantile(arr: List[float], q: float) -> float:
-    if not arr:
-        return float("nan")
-    return float(np.quantile(np.asarray(arr, dtype=float), q))
-
-
-def mean_or_nan(arr: List[float]) -> float:
-    if not arr:
-        return float("nan")
-    return float(np.mean(np.asarray(arr, dtype=float)))
-
-
-def median_or_nan(arr: List[float]) -> float:
-    if not arr:
-        return float("nan")
-    return float(np.median(np.asarray(arr, dtype=float)))
-
-
-def pct(count: int, total: int) -> float:
-    if total <= 0:
-        return float("nan")
-    return 100.0 * float(count) / float(total)
-
-
-def fmt(v: float, digits: int = 2) -> str:
-    if v != v:  # NaN check
-        return ""
-    return f"{v:.{digits}f}"
 
 
 def load_sessions(motion_csv: str) -> Dict[Tuple[str, str, str], Dict[str, List[float]]]:
@@ -142,47 +117,6 @@ def session_matches(
     if session_start_boston and k_start != session_start_boston:
         return False
     return True
-
-
-def build_summary_row(
-    key: Tuple[str, str, str],
-    series: Dict[str, List[float]],
-) -> Dict[str, str]:
-    pid, night, start = key
-    eps = series["eps"]
-    dt_avg = series["dt_avg"]
-    dt_max = series["dt_max"]
-    rows = max(len(series["second_index"]), len(eps), len(dt_avg), len(dt_max))
-
-    eps_zero = sum(1 for v in eps if v <= 0)
-    eps_low = sum(1 for v in eps if v < LOW_HZ_THRESHOLD)
-    dt_stall = sum(1 for v in dt_max if v > STALL_DT_MS)
-    dt_severe = sum(1 for v in dt_max if v > SEVERE_DT_MS)
-
-    return {
-        "pid": pid,
-        "night_number": str(night),
-        "session_start_boston": start,
-        "rows": str(rows),
-        "sensor_events_n": str(len(eps)),
-        "sensor_events_mean_hz": fmt(mean_or_nan(eps), 2),
-        "sensor_events_median_hz": fmt(median_or_nan(eps), 2),
-        "sensor_events_p10_hz": fmt(quantile(eps, 0.10), 2),
-        "sensor_events_p90_hz": fmt(quantile(eps, 0.90), 2),
-        "sensor_events_zero_count": str(eps_zero),
-        "sensor_events_below5hz_count": str(eps_low),
-        "sensor_events_below5hz_pct": fmt(pct(eps_low, len(eps)), 2),
-        "sensor_dt_avg_n": str(len(dt_avg)),
-        "sensor_dt_avg_mean_ms": fmt(mean_or_nan(dt_avg), 2),
-        "sensor_dt_avg_p95_ms": fmt(quantile(dt_avg, 0.95), 2),
-        "sensor_dt_max_n": str(len(dt_max)),
-        "sensor_dt_max_mean_ms": fmt(mean_or_nan(dt_max), 2),
-        "sensor_dt_max_p95_ms": fmt(quantile(dt_max, 0.95), 2),
-        "sensor_dt_max_gt500ms_count": str(dt_stall),
-        "sensor_dt_max_gt500ms_pct": fmt(pct(dt_stall, len(dt_max)), 2),
-        "sensor_dt_max_gt1000ms_count": str(dt_severe),
-        "sensor_dt_max_gt1000ms_pct": fmt(pct(dt_severe, len(dt_max)), 2),
-    }
 
 
 def plot_session(
@@ -265,7 +199,7 @@ def main() -> None:
     generated_plots: List[str] = []
     for idx, key in enumerate(selected_keys):
         series = sessions[key]
-        row = build_summary_row(key, series)
+        row = build_sensor_sampling_summary_row(key, series)
         rows.append(row)
         if not args.no_plots and idx < max(0, int(args.max_plots)):
             plot_path = plot_session(key, series, args.plot_dir)
@@ -273,32 +207,8 @@ def main() -> None:
                 generated_plots.append(plot_path)
 
     os.makedirs(os.path.dirname(args.out_csv) or ".", exist_ok=True)
-    fields = [
-        "pid",
-        "night_number",
-        "session_start_boston",
-        "rows",
-        "sensor_events_n",
-        "sensor_events_mean_hz",
-        "sensor_events_median_hz",
-        "sensor_events_p10_hz",
-        "sensor_events_p90_hz",
-        "sensor_events_zero_count",
-        "sensor_events_below5hz_count",
-        "sensor_events_below5hz_pct",
-        "sensor_dt_avg_n",
-        "sensor_dt_avg_mean_ms",
-        "sensor_dt_avg_p95_ms",
-        "sensor_dt_max_n",
-        "sensor_dt_max_mean_ms",
-        "sensor_dt_max_p95_ms",
-        "sensor_dt_max_gt500ms_count",
-        "sensor_dt_max_gt500ms_pct",
-        "sensor_dt_max_gt1000ms_count",
-        "sensor_dt_max_gt1000ms_pct",
-    ]
     with open(args.out_csv, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
+        writer = csv.DictWriter(f, fieldnames=SAMPLING_SUMMARY_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
 

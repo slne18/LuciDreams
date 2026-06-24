@@ -31,6 +31,11 @@ __pycache__/
 plot/EEG_*.csv
 plot/EEG/*.csv
 
-## Generated motion exports
+## Generated session exports (large per-second / cue detail files)
+data_prep/output/motion_per_second_series.csv
+data_prep/output/motion_smoothed_series.csv
+data_prep/output/cue_events.csv
+
+## Legacy generated exports (pre data_prep/output)
 plot/data_night/motion_per_second_series.csv
 plot/data_night/motion_smoothed_series.csv
