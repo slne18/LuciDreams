@@ -1,0 +1,2 @@
+pid,night_number,device_time_start,rem_minutes,night_summary_night_number,night_summary_session_doc_id,reason
+299342693996,1,2026-06-24T02:31:55.193Z,76,2,5nVQMQzFSUusSX8dBVAO,"no_hardware_row_with_matching_device_time_start_or_rem_minutes (dream rem=76, hardware rem values=[80]) | excluded_from_hardware_data: native_api false (native_audio)"

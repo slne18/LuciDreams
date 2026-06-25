@@ -8,7 +8,9 @@ Filters:
   - all values in native_api_status_json are true (no false)
   - deduplicate sessions like plot/plot_motion_rem.py (time window + motion signature)
 
-Run export_night_summary.py first to refresh the CSV inputs.
+Run export_night_summary.py first to refresh the CSV inputs in data_prep/output/.
+
+Default output: data_prep/output/analysis_data/hardware_data.xlsx
 """
 
 from __future__ import annotations
@@ -27,7 +29,8 @@ import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_INPUT_DIR = os.path.join(BASE_DIR, "output")
-DEFAULT_OUTPUT_XLSX = os.path.join(DEFAULT_INPUT_DIR, "hardware_data.xlsx")
+DEFAULT_ANALYSIS_DATA_DIR = os.path.join(DEFAULT_INPUT_DIR, "analysis_data")
+DEFAULT_OUTPUT_XLSX = os.path.join(DEFAULT_ANALYSIS_DATA_DIR, "hardware_data.xlsx")
 
 FOUR_HOURS_SECONDS = 4 * 60 * 60
 
