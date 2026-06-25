@@ -1,0 +1,4 @@
+{
+  "include": ["data_prep", "plot"],
+  "extraPaths": ["plot"]
+}

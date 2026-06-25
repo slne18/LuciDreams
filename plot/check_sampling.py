@@ -24,10 +24,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 DEFAULT_DATA_DIR = os.path.join(PROJECT_ROOT, "data_prep", "output")
 DEFAULT_MOTION_CSV = os.path.join(DEFAULT_DATA_DIR, "motion_per_second_series.csv")
-DEFAULT_OUT_CSV = os.path.join(BASE_DIR, "data_night", "sensor_sampling_summary.csv")
+DEFAULT_OUT_CSV = os.path.join(BASE_DIR, "sensor_sampling", "sensor_sampling_summary.csv")
 DEFAULT_OUT_DIR = os.path.join(BASE_DIR, "sampling_plots")
 
-from export_data import (  # noqa: E402
+from export_sensor_sampling import (  # noqa: E402
     LOW_HZ_THRESHOLD,
     SAMPLING_SUMMARY_FIELDS,
     SEVERE_DT_MS,
@@ -167,7 +167,7 @@ def plot_session(
     axes[-1].set_xlabel("Time (session local clock)")
 
     fig.suptitle(f"Sampling stability | pid={pid} | night={night} | start={start}", fontsize=11)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
 
     os.makedirs(out_dir, exist_ok=True)
     out_name = f"sampling_{safe_name(pid)}_night{safe_name(night)}_{safe_name(start)}.png"

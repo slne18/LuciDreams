@@ -15,26 +15,16 @@ import argparse
 import csv
 import json
 import os
-import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PLOT_DIR = os.path.join(os.path.dirname(BASE_DIR), "plot")
-sys.path.insert(0, PLOT_DIR)
-
-from export_data import (  # noqa: E402
-    DEFAULT_FIREBASE_PROJECT_ID,
-    epoch_to_boston_time,
-    iso_plus_seconds,
-    load_local_session_records,
-    load_series_from_doc,
-    parse_iso,
-    to_boston_time,
-)
+DEFAULT_FIREBASE_PROJECT_ID = "luciddreaming-33e97"
+BOSTON_TZ = ZoneInfo("America/New_York")
 
 OUT_DIR = os.path.join(BASE_DIR, "output")
 OUT_CSV = os.path.join(OUT_DIR, "night_summary.csv")
@@ -43,6 +33,141 @@ OUT_CUES_CSV = os.path.join(OUT_DIR, "cue_events.csv")
 OUT_MOTION_CSV = os.path.join(OUT_DIR, "motion_per_second_series.csv")
 OUT_SMOOTHED_CSV = os.path.join(OUT_DIR, "motion_smoothed_series.csv")
 OUT_TRAINS_CSV = os.path.join(OUT_DIR, "train_events.csv")
+
+
+def parse_iso(s):
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def iso_plus_seconds(iso_string, seconds):
+    if iso_string is None or seconds is None:
+        return None
+    base = parse_iso(iso_string)
+    if base is None:
+        return None
+    return (base + timedelta(seconds=float(seconds))).isoformat()
+
+
+def to_boston_time(iso_string):
+    dt = parse_iso(iso_string)
+    if dt is None:
+        return None
+    return dt.astimezone(BOSTON_TZ).strftime("%H:%M:%S")
+
+
+def epoch_to_boston_time(night_start_iso, epoch_sec, fallback_iso=None):
+    if night_start_iso is not None and epoch_sec is not None:
+        ts = iso_plus_seconds(night_start_iso, epoch_sec)
+        if ts is not None:
+            return to_boston_time(ts)
+    return to_boston_time(fallback_iso)
+
+
+def load_series_from_doc(data, plain_key, json_key):
+    series = data.get(plain_key, None)
+    if series is None:
+        series_json = data.get(json_key, None)
+        if isinstance(series_json, str) and series_json.strip():
+            try:
+                parsed = json.loads(series_json)
+                if isinstance(parsed, list):
+                    series = parsed
+            except Exception:
+                series = None
+    if not isinstance(series, list):
+        return []
+    return series
+
+
+def load_local_session_records(local_file):
+    with open(local_file, "r", encoding="utf-8") as f:
+        raw = f.read().strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        if raw.startswith('"') and raw.endswith('"'):
+            inner = raw[1:-1].replace('\\"', '"')
+            parsed = json.loads(inner)
+        else:
+            raise
+    if isinstance(parsed, str):
+        parsed = json.loads(parsed)
+
+    def get_motion_len(doc):
+        ms = doc.get("motion_per_second_series")
+        if isinstance(ms, list):
+            return len(ms)
+        ms_json = doc.get("motion_per_second_series_json")
+        if isinstance(ms_json, str) and ms_json.strip():
+            try:
+                parsed_ms = json.loads(ms_json)
+                if isinstance(parsed_ms, list):
+                    return len(parsed_ms)
+            except Exception:
+                pass
+        return 0
+
+    def get_rem_len(doc):
+        rp = doc.get("rem_periods")
+        if isinstance(rp, list):
+            return len(rp)
+        rp_json = doc.get("rem_periods_json")
+        if isinstance(rp_json, str) and rp_json.strip():
+            try:
+                parsed_rp = json.loads(rp_json)
+                if isinstance(parsed_rp, list):
+                    return len(parsed_rp)
+            except Exception:
+                pass
+        return 0
+
+    def session_fingerprint(doc):
+        general = doc.get("general", {}) or {}
+        start_iso = str(general.get("device_time_start") or "")
+        return (
+            str(doc.get("participant_id") or ""),
+            start_iso,
+            str(general.get("condition") if general.get("condition") is not None else ""),
+            str(general.get("epochs_count") if general.get("epochs_count") is not None else ""),
+            str(get_motion_len(doc)),
+            str(get_rem_len(doc)),
+        )
+
+    records = []
+    counter = 0
+    seen_fingerprints = set()
+    if isinstance(parsed, list):
+        for item in parsed:
+            docs = []
+            if isinstance(item, dict) and isinstance(item.get("docs"), list):
+                docs = item.get("docs") or []
+            elif isinstance(item, dict) and item.get("participant_id"):
+                docs = [item]
+            for d in docs:
+                if not isinstance(d, dict):
+                    continue
+                fp = session_fingerprint(d)
+                if fp in seen_fingerprints:
+                    continue
+                seen_fingerprints.add(fp)
+                pid = d.get("participant_id") or "unknown_pid"
+                sid = f"local_{counter}"
+                spath = f"sleep_studies/{pid}/sessions/{sid}"
+                records.append((sid, spath, d))
+                counter += 1
+    return records
 
 
 def load_rem_periods(data):
@@ -177,7 +302,7 @@ def build_night_summary_row(item):
 
 
 def extract_session_detail_rows(item):
-    """Extract rem/cue/motion rows for one session (mirrors plot/export_data.py)."""
+    """Extract rem/cue/motion rows for one session."""
     data = item["data"]
     general = data.get("general", {}) or {}
     pid = item["pid"]

@@ -832,6 +832,14 @@
   // App-wide cue
   const DEFAULT_BEEP_DURATION_MS = 150;
   const CONDITION_POOL = APP_TEST_MODE ? [4, 5] : [0, 1, 2, 3, 4, 5, 6, 7];
+  function getRandomConditionPool() {
+    return CONDITION_POOL.filter(function(c) { return c !== 0; });
+  }
+  function isValidTonightCondition(c) {
+    return c === 0 || CONDITION_POOL.indexOf(c) !== -1;
+  }
+  const MIN_COMPLETED_NIGHT_SECONDS = 4 * 60 * 60;
+  const CONDITION_STATE_SCHEMA_VERSION = 2;
   const SHOW_SKIP_TRAINING = APP_TEST_MODE;
   const TRAINING_DURATION_MS = 25 * 60 * 1000;
   const TRAINING_CUE_INTERVAL_MS = 1000;
@@ -1013,6 +1021,88 @@
 
   // Returns condition state key.
   function getConditionStateKey(pid) { return 'luci_condition_state_' + (pid || 'default'); }
+  function createFreshConditionState() {
+    return {
+      schema_version: CONDITION_STATE_SCHEMA_VERSION,
+      current_cycle_pool: getRandomConditionPool().slice(),
+      spent_conditions: [],
+      pending_condition: null,
+      pending_since_day: null,
+      night_number: 0,
+      last_assigned_day: null,
+      last_condition: null
+    };
+  }
+  function loadConditionState(pid) {
+    var key = getConditionStateKey(pid);
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return null;
+      return migrateConditionState(JSON.parse(raw));
+    } catch (e) {
+      return null;
+    }
+  }
+  function saveConditionState(pid, cs) {
+    try { localStorage.setItem(getConditionStateKey(pid), JSON.stringify(cs)); } catch (e) {}
+  }
+  function migrateConditionState(cs) {
+    if (!cs) return cs;
+    if (cs.schema_version === CONDITION_STATE_SCHEMA_VERSION) return cs;
+    cs.schema_version = CONDITION_STATE_SCHEMA_VERSION;
+    if (cs.pending_condition == null && cs.last_condition != null && isValidTonightCondition(cs.last_condition) &&
+        Array.isArray(cs.spent_conditions) && cs.spent_conditions.length === 1 &&
+        cs.spent_conditions[0] === cs.last_condition) {
+      cs.pending_condition = cs.last_condition;
+      cs.pending_since_day = cs.last_assigned_day || null;
+      cs.spent_conditions = [];
+      if (!Array.isArray(cs.current_cycle_pool)) cs.current_cycle_pool = getRandomConditionPool().slice();
+      if (cs.last_condition !== 0 && cs.current_cycle_pool.indexOf(cs.last_condition) === -1) {
+        cs.current_cycle_pool.push(cs.last_condition);
+      }
+    }
+    if (cs.pending_condition == null) cs.pending_condition = null;
+    if (cs.pending_since_day == null) cs.pending_since_day = null;
+    cs.night_number = Array.isArray(cs.spent_conditions) ? cs.spent_conditions.length : 0;
+    return cs;
+  }
+  function sessionQualifiesAsCompletedNight(doc) {
+    var g = (doc && doc.general) || {};
+    var start = g.device_time_start;
+    var end = g.device_time_end;
+    if (start && end) {
+      var durSec = (new Date(end).getTime() - new Date(start).getTime()) / 1000;
+      if (isFinite(durSec) && durSec >= MIN_COMPLETED_NIGHT_SECONDS) return true;
+    }
+    var remCount = 0;
+    if (doc && doc.rem_periods_count != null) remCount = Number(doc.rem_periods_count) || 0;
+    else if (g.rem_episode_count != null) remCount = Number(g.rem_episode_count) || 0;
+    else if (doc && doc.rem_periods_json) {
+      try {
+        var parsed = JSON.parse(doc.rem_periods_json);
+        if (Array.isArray(parsed)) remCount = parsed.length;
+      } catch (e) {}
+    }
+    return remCount > 0;
+  }
+  function commitConditionOnCompletedNight(pid, condition, qualified) {
+    if (!pid || !qualified) return;
+    var cs = loadConditionState(pid) || createFreshConditionState();
+    var c = condition != null ? Number(condition) : cs.pending_condition;
+    if (c == null || !isValidTonightCondition(c)) return;
+    if (!Array.isArray(cs.spent_conditions)) cs.spent_conditions = [];
+    cs.spent_conditions.push(c);
+    if (c !== 0) {
+      if (!Array.isArray(cs.current_cycle_pool)) cs.current_cycle_pool = getRandomConditionPool().slice();
+      var idx = cs.current_cycle_pool.indexOf(c);
+      if (idx >= 0) cs.current_cycle_pool.splice(idx, 1);
+    }
+    cs.pending_condition = null;
+    cs.pending_since_day = null;
+    cs.night_number = cs.spent_conditions.length;
+    cs.last_condition = c;
+    saveConditionState(pid, cs);
+  }
   function getLocalDayKey(d) {
     var dt = d || new Date();
     var y = dt.getFullYear();
@@ -1022,52 +1112,53 @@
   }
   // Ensures condition for tonight.
   function ensureConditionForTonight(pid) {
-    var key = getConditionStateKey(pid);
-    var raw = null;
-    try { raw = localStorage.getItem(key); } catch (e) {}
-    var cs = raw ? JSON.parse(raw) : null;
-    // Handles pool is outdated.
+    var cs = loadConditionState(pid);
     function poolIsOutdated(stateObj) {
+      if (!stateObj || stateObj.schema_version !== CONDITION_STATE_SCHEMA_VERSION) return true;
       if (!stateObj || !Array.isArray(stateObj.current_cycle_pool) || !Array.isArray(stateObj.spent_conditions)) return true;
-      var all = stateObj.current_cycle_pool.concat(stateObj.spent_conditions);
-      var seen = {};
-      for (var i = 0; i < all.length; i++) seen[all[i]] = true;
-      var keys = Object.keys(seen).map(function(k) { return Number(k); }).sort(function(a, b) { return a - b; });
-      var expected = CONDITION_POOL.slice().sort(function(a, b) { return a - b; });
-      if (keys.length !== expected.length) return true;
-      for (var j = 0; j < expected.length; j++) {
-        if (keys[j] !== expected[j]) return true;
+      for (var i = 0; i < stateObj.current_cycle_pool.length; i++) {
+        if (stateObj.current_cycle_pool[i] === 0) return true;
       }
+      var all = stateObj.current_cycle_pool.concat(stateObj.spent_conditions);
+      if (stateObj.pending_condition != null) all = all.concat([stateObj.pending_condition]);
+      for (var k = 0; k < all.length; k++) {
+        if (!isValidTonightCondition(all[k])) return true;
+      }
+      if (stateObj.spent_conditions.length > 0 && stateObj.spent_conditions[0] !== 0) return true;
       return false;
     }
+    if (poolIsOutdated(cs)) cs = createFreshConditionState();
+    if (!cs) cs = createFreshConditionState();
+    cs = migrateConditionState(cs);
+
     var todayKey = getLocalDayKey();
-    var tonight;
-    if (poolIsOutdated(cs)) {
-      cs = { current_cycle_pool: CONDITION_POOL.slice(), spent_conditions: [], night_number: 0, last_assigned_day: null, last_condition: null };
-    }
-    if (typeof cs.night_number !== 'number' || !isFinite(cs.night_number) || cs.night_number < 0) {
-      cs.night_number = (Array.isArray(cs.spent_conditions) ? cs.spent_conditions.length : 0);
-    }
-    // Same calendar day => keep same "night" metadata (condition + night number).
-    if (cs.last_assigned_day === todayKey &&
-        cs.last_condition != null &&
-        CONDITION_POOL.indexOf(cs.last_condition) !== -1) {
-      state.tonight_condition = cs.last_condition;
-      try { localStorage.setItem(key, JSON.stringify(cs)); } catch (e) {}
+    if (cs.pending_condition != null && isValidTonightCondition(cs.pending_condition)) {
+      state.tonight_condition = cs.pending_condition;
+      cs.last_condition = cs.pending_condition;
+      cs.last_assigned_day = todayKey;
+      cs.night_number = (Array.isArray(cs.spent_conditions) ? cs.spent_conditions.length : 0) + 1;
+      saveConditionState(pid, cs);
       return;
     }
-    if (!cs.current_cycle_pool || cs.current_cycle_pool.length === 0) {
-      cs.current_cycle_pool = CONDITION_POOL.slice();
-      cs.spent_conditions = [];
+
+    var tonight;
+    var isFirstCompletedNight = !cs.spent_conditions || cs.spent_conditions.length === 0;
+    if (isFirstCompletedNight) {
+      tonight = 0;
+    } else {
+      if (!cs.current_cycle_pool || cs.current_cycle_pool.length === 0) {
+        cs.current_cycle_pool = getRandomConditionPool().slice();
+      }
+      var pickIdx = Math.floor(Math.random() * cs.current_cycle_pool.length);
+      tonight = cs.current_cycle_pool[pickIdx];
     }
-    var pickIdx = Math.floor(Math.random() * cs.current_cycle_pool.length);
-    tonight = cs.current_cycle_pool[pickIdx];
-    cs.current_cycle_pool.splice(pickIdx, 1);
-    cs.spent_conditions.push(tonight);
+
+    cs.pending_condition = tonight;
+    cs.pending_since_day = todayKey;
     cs.last_condition = tonight;
     cs.last_assigned_day = todayKey;
-    cs.night_number = (cs.night_number || 0) + 1;
-    try { localStorage.setItem(key, JSON.stringify(cs)); } catch (e) {}
+    cs.night_number = (Array.isArray(cs.spent_conditions) ? cs.spent_conditions.length : 0) + 1;
+    saveConditionState(pid, cs);
     state.tonight_condition = tonight;
   }
 
@@ -3524,13 +3615,15 @@ function playFixedBeep75(durationMs, onEnded) {
     };
   }
 
-  /** Night index for this participant (1-based), date-stable by local calendar day. */
+  /** Night index for this participant (1-based). Completed nights + current pending attempt. */
   function getNightNumberForSurvey(pid) {
     try {
-      var raw = localStorage.getItem(getConditionStateKey(pid));
-      if (!raw) return '';
-      var cs = JSON.parse(raw);
-      if (cs && typeof cs.night_number === 'number' && isFinite(cs.night_number) && cs.night_number > 0) {
+      var cs = loadConditionState(pid);
+      if (!cs) return '';
+      if (cs.pending_condition != null) {
+        return String((Array.isArray(cs.spent_conditions) ? cs.spent_conditions.length : 0) + 1);
+      }
+      if (typeof cs.night_number === 'number' && isFinite(cs.night_number) && cs.night_number > 0) {
         return String(Math.floor(cs.night_number));
       }
       if (cs && Array.isArray(cs.spent_conditions) && cs.spent_conditions.length > 0) {
@@ -4271,6 +4364,8 @@ function playFixedBeep75(durationMs, onEnded) {
           state.sensorEventDtMaxMsForBackend = [];
           state.soundLog = [];
           console.log('Data synced to Firestore:', activeMode);
+          var qualified = sessionQualifiesAsCompletedNight(doc);
+          commitConditionOnCompletedNight(state.pid, doc.general ? doc.general.condition : null, qualified);
           return clearLocalSessionBackupSnapshot(state.pid).then(function() {
             return flushPendingSleepDocs();
           }).then(function() {
