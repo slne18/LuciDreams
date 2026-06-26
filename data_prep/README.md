@@ -6,7 +6,7 @@ Scripts to export night data from Firebase, clean Qualtrics surveys, and build o
 
 | Path | Contents |
 |---|---|
-| `input/` | Raw Qualtrics exports (`onboarding.csv`, `dream_report.csv`) |
+| `input/` | Raw Qualtrics exports (`onboarding.xlsx`, `dream_report.csv`) |
 | `output/` | Firebase session exports (CSVs used to build hardware data) |
 | `output/analysis_data/` | Clean survey tables, filtered hardware nights, merged analysis file |
 
@@ -38,7 +38,7 @@ python3 data_prep/export_night_data.py --local-file path/to/sessions.json
 
 Place fresh survey exports in `data_prep/input/`:
 
-- `onboarding.csv`
+- `onboarding.xlsx`
 - `dream_report.csv`
 
 ## 3. Clean survey data
@@ -73,7 +73,7 @@ Joins dream reports with hardware sessions (by `pid`, `device_time_start`, `rem_
 
 Outputs:
 
-- `output/analysis_data/merged_data.csv` — main analysis file (one row per dream report / night)
+- `output/analysis_data/merged_data.xlsx` — main analysis file (one row per dream report / night)
 - `output/analysis_data/merged_data_log.csv` — rows that could not be matched to hardware, with reasons
 
 ## Full run (after updating inputs)
@@ -86,4 +86,4 @@ python3 data_prep/build_hardware_data.py
 python3 data_prep/build_merged_data.py
 ```
 
-Use `merged_data.csv` for statistics. Nights from the same participant share baseline columns; use mixed models or cluster by `pid` when testing night-level outcomes.
+Use `merged_data.xlsx` for statistics. Nights from the same participant share baseline columns; use mixed models or cluster by `pid` when testing night-level outcomes.

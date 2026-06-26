@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Clean Qualtrics onboarding export (onboarding.csv).
+Clean Qualtrics onboarding export (onboarding.xlsx).
 
 Steps:
   1. Drop file row 1 (English Qualtrics keys) and row 3 (ImportId); use row 2 as header.
@@ -10,7 +10,7 @@ Steps:
   5. Drop voice-consent, pacemaker, signature, and Part1–Part4 columns; rename selected survey columns.
   6. Add baseline_LD_freq_ord (0 = lowest lucid-dream frequency, 6 = highest).
 
-Default input:  data_prep/input/onboarding.csv
+Default input:  data_prep/input/onboarding.xlsx
 Default output: data_prep/output/analysis_data/onboarding_clean.csv
 """
 
@@ -21,8 +21,10 @@ import csv
 import os
 from typing import List, Sequence
 
+import pandas as pd
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_INPUT = os.path.join(BASE_DIR, "input", "onboarding.csv")
+DEFAULT_INPUT = os.path.join(BASE_DIR, "input", "onboarding.xlsx")
 DEFAULT_OUTPUT = os.path.join(BASE_DIR, "output", "analysis_data", "onboarding_clean.csv")
 
 # Qualtrics metadata columns A through Q (0-based indices 0-16); column R starts at Q6.
@@ -71,8 +73,12 @@ BASELINE_LD_FREQ_ORDINAL = {
 
 
 def load_onboarding_rows(path: str) -> tuple[List[str], List[List[str]]]:
-    with open(path, newline="", encoding="utf-8") as f:
-        rows = list(csv.reader(f))
+    if path.lower().endswith((".xlsx", ".xls")):
+        sheet = pd.read_excel(path, header=None, dtype=str)
+        rows = sheet.fillna("").astype(str).values.tolist()
+    else:
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
 
     if len(rows) < 4:
         raise ValueError(f"Expected at least 4 rows in {path}, found {len(rows)}")
@@ -225,7 +231,7 @@ def process_onboarding(input_path: str, output_path: str) -> dict[str, int]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Clean Qualtrics onboarding.csv export.")
+    parser = argparse.ArgumentParser(description="Clean Qualtrics onboarding export.")
     parser.add_argument("--input", default=DEFAULT_INPUT, help=f"Input CSV (default: {DEFAULT_INPUT})")
     parser.add_argument(
         "--output",

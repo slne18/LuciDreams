@@ -19,7 +19,7 @@ Default inputs:
   data_prep/output/night_summary.csv (optional, for richer unmatched reasons)
 
 Default outputs:
-  data_prep/output/analysis_data/merged_data.csv
+  data_prep/output/analysis_data/merged_data.xlsx
   data_prep/output/analysis_data/merged_data_log.csv
 """
 
@@ -40,7 +40,7 @@ DEFAULT_HARDWARE_XLSX = os.path.join(DEFAULT_ANALYSIS_DATA_DIR, "hardware_data.x
 DEFAULT_DREAM_CSV = os.path.join(DEFAULT_ANALYSIS_DATA_DIR, "dream_report_clean.csv")
 DEFAULT_ONBOARDING_CSV = os.path.join(DEFAULT_ANALYSIS_DATA_DIR, "onboarding_clean.csv")
 DEFAULT_NIGHT_SUMMARY_CSV = os.path.join(DEFAULT_OUTPUT_DIR, "night_summary.csv")
-DEFAULT_OUTPUT_CSV = os.path.join(DEFAULT_ANALYSIS_DATA_DIR, "merged_data.csv")
+DEFAULT_OUTPUT_XLSX = os.path.join(DEFAULT_ANALYSIS_DATA_DIR, "merged_data.xlsx")
 DEFAULT_MERGE_LOG_CSV = os.path.join(DEFAULT_ANALYSIS_DATA_DIR, "merged_data_log.csv")
 
 FOUR_HOURS_SECONDS = 4 * 60 * 60
@@ -326,7 +326,7 @@ def explain_unmatched(
 def merge_hardware_and_dream(
     hardware_path: str,
     dream_path: str,
-    output_csv: str,
+    output_xlsx: str,
     merge_log_csv: str,
     night_summary_path: Optional[str] = None,
     onboarding_path: Optional[str] = None,
@@ -394,8 +394,8 @@ def merge_hardware_and_dream(
     merged, onboarding_unmatched_rows = merge_onboarding_baseline(merged, onboarding_path)
     merged = merged.drop(columns=[col for col in OUTPUT_COLUMNS_TO_DROP if col in merged.columns])
 
-    os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
-    merged.to_csv(output_csv, index=False)
+    os.makedirs(os.path.dirname(output_xlsx) or ".", exist_ok=True)
+    merged.to_excel(output_xlsx, index=False)
 
     log_columns = [
         "pid",
@@ -451,8 +451,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default=DEFAULT_OUTPUT_CSV,
-        help=f"Merged CSV (default: {DEFAULT_OUTPUT_CSV})",
+        default=DEFAULT_OUTPUT_XLSX,
+        help=f"Merged XLSX (default: {DEFAULT_OUTPUT_XLSX})",
     )
     args = parser.parse_args()
 
