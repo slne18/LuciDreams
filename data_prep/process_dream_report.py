@@ -148,7 +148,7 @@ def drop_metadata_columns(header: Sequence[str], rows: List[List[str]]) -> tuple
             f"Expected survey columns after column Q, found only {len(header)} columns"
         )
 
-    trimmed_header = header[METADATA_COLUMN_COUNT:]
+    trimmed_header = list(header[METADATA_COLUMN_COUNT:])
     trimmed_rows: List[List[str]] = []
     for row in rows:
         if len(row) < len(header):

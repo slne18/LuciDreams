@@ -1,0 +1,61 @@
+ Family: binomial  ( logit )
+Formula:          
+lucid ~ Age_log_z + baseline_LD_freq_ord_log_z + baseline_sleep_qual_log_z +  
+    You.feel.more.restless.than.usual_log_z + You.woke.up.more.than.usual.during.last.night_log_z +  
+    Waking.up.in.the.morning.was.more.difficult.than.usual_log_z +  
+    It.took.longer.than.usual.to.wake.up_log_z + You.felt.more.tired.than.usual.when.waking.up_log_z +  
+    time_asleep_log_z + Gender + (1 | pid)
+Data: data
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+      168       212       -71       142       205 
+
+Random effects:
+
+Conditional model:
+ Groups Name        Variance Std.Dev.
+ pid    (Intercept) 1.968    1.403   
+Number of obs: 218, groups:  pid, 61
+
+Conditional model:
+                                                               Estimate
+(Intercept)                                                  -2.431e+00
+Age_log_z                                                     1.001e+00
+baseline_LD_freq_ord_log_z                                    1.164e+00
+baseline_sleep_qual_log_z                                     1.233e+00
+You.feel.more.restless.than.usual_log_z                      -7.461e-01
+You.woke.up.more.than.usual.during.last.night_log_z           8.305e-01
+Waking.up.in.the.morning.was.more.difficult.than.usual_log_z  4.794e-01
+It.took.longer.than.usual.to.wake.up_log_z                   -2.554e-02
+You.felt.more.tired.than.usual.when.waking.up_log_z          -5.429e-01
+time_asleep_log_z                                             8.778e-02
+GenderMale                                                   -1.096e+00
+GenderNon-binary                                             -1.790e+01
+                                                             Std. Error z value
+(Intercept)                                                   6.519e-01  -3.729
+Age_log_z                                                     4.730e-01   2.116
+baseline_LD_freq_ord_log_z                                    5.540e-01   2.101
+baseline_sleep_qual_log_z                                     5.892e-01   2.093
+You.feel.more.restless.than.usual_log_z                       3.871e-01  -1.928
+You.woke.up.more.than.usual.during.last.night_log_z           4.104e-01   2.024
+Waking.up.in.the.morning.was.more.difficult.than.usual_log_z  5.544e-01   0.865
+It.took.longer.than.usual.to.wake.up_log_z                    4.325e-01  -0.059
+You.felt.more.tired.than.usual.when.waking.up_log_z           4.907e-01  -1.106
+time_asleep_log_z                                             2.930e-01   0.300
+GenderMale                                                    9.305e-01  -1.178
+GenderNon-binary                                              1.042e+04  -0.002
+                                                             Pr(>|z|)    
+(Intercept)                                                  0.000192 ***
+Age_log_z                                                    0.034329 *  
+baseline_LD_freq_ord_log_z                                   0.035612 *  
+baseline_sleep_qual_log_z                                    0.036353 *  
+You.feel.more.restless.than.usual_log_z                      0.053912 .  
+You.woke.up.more.than.usual.during.last.night_log_z          0.043005 *  
+Waking.up.in.the.morning.was.more.difficult.than.usual_log_z 0.387161    
+It.took.longer.than.usual.to.wake.up_log_z                   0.952917    
+You.felt.more.tired.than.usual.when.waking.up_log_z          0.268603    
+time_asleep_log_z                                            0.764521    
+GenderMale                                                   0.238910    
+GenderNon-binary                                             0.998629    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1

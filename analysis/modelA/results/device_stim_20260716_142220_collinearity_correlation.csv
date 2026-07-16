@@ -1,0 +1,5 @@
+"","rem_episode_count_log_z","rem_minutes_log_z","total_induction_cues_log_z","rem_motion_avg_log_z"
+"rem_episode_count_log_z",1,0.535675433787393,0.132277970700665,0.266098830145813
+"rem_minutes_log_z",0.535675433787393,1,0.394946167456275,-0.189400324578574
+"total_induction_cues_log_z",0.132277970700665,0.394946167456275,1,-0.207933129775618
+"rem_motion_avg_log_z",0.266098830145813,-0.189400324578574,-0.207933129775618,1

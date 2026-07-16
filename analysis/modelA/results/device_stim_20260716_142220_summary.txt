@@ -1,0 +1,36 @@
+ Family: binomial  ( logit )
+Formula:          
+lucid ~ cue_notice + disruptive_arousal_any + induction_arousal_any +  
+    rem_episode_count_log_z + rem_minutes_log_z + total_induction_cues_log_z +  
+    rem_motion_avg_log_z + condition + (1 | pid)
+Data: data
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    170.2     224.7     -69.1     138.2       207 
+
+Random effects:
+
+Conditional model:
+ Groups Name        Variance Std.Dev.
+ pid    (Intercept) 61.65    7.852   
+Number of obs: 223, groups:  pid, 65
+
+Conditional model:
+                           Estimate Std. Error z value Pr(>|z|)   
+(Intercept)                -10.5001     3.2728  -3.208  0.00134 **
+cue_notice1                  2.7159     1.0117   2.684  0.00727 **
+disruptive_arousal_any1     -0.9425     1.5866  -0.594  0.55249   
+induction_arousal_any0      -0.3803     0.9785  -0.389  0.69755   
+rem_episode_count_log_z     -1.4254     0.6248  -2.281  0.02253 * 
+rem_minutes_log_z            1.5095     0.6770   2.230  0.02576 * 
+total_induction_cues_log_z  -1.0567     0.7138  -1.480  0.13876   
+rem_motion_avg_log_z         0.1956     0.3817   0.512  0.60838   
+condition1                   5.3650     2.6522   2.023  0.04309 * 
+condition2                   1.3791     1.9842   0.695  0.48703   
+condition3                   1.0568     2.1451   0.493  0.62226   
+condition4                   1.4899     2.0866   0.714  0.47520   
+condition5                   3.3073     2.1881   1.511  0.13067   
+condition6                   3.9137     2.6115   1.499  0.13397   
+condition7                   3.6589     2.3375   1.565  0.11751   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1

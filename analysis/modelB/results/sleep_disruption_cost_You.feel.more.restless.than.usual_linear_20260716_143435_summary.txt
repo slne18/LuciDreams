@@ -1,0 +1,25 @@
+ Family: gaussian  ( identity )
+Formula:          `You feel more restless than usual` ~ condition + (1 | pid)
+Data: data
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    468.6     485.6    -228.3     456.6       121 
+
+Random effects:
+
+Conditional model:
+ Groups   Name        Variance Std.Dev.
+ pid      (Intercept) 0.6809   0.8252  
+ Residual             1.6461   1.2830  
+Number of obs: 127, groups:  pid, 53
+
+Dispersion estimate for gaussian family (sigma^2): 1.65 
+
+Conditional model:
+                    Estimate Std. Error z value Pr(>|z|)    
+(Intercept)           2.2481     0.2491   9.024  < 2e-16 ***
+conditiontactile     -0.3038     0.3410  -0.891  0.37300    
+conditionflashlight  -0.4738     0.3637  -1.303  0.19260    
+conditionaudio       -0.9253     0.3426  -2.701  0.00692 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1

@@ -38,8 +38,7 @@ HARDWARE_COLUMNS = [
     "pid",
     "night_number",
     "condition",
-    "device_time_start",
-    "device_time_end",
+    "time_asleep",
     "rem_minutes",
     "rem_motion_avg",
     "induction_arousal_any",
@@ -82,6 +81,12 @@ def session_duration_seconds(start_iso: Optional[str], end_iso: Optional[str]) -
         return None
     return int((end_dt - start_dt).total_seconds())
 
+
+def session_duration_minutes(start_iso: Optional[str], end_iso: Optional[str]) -> Optional[float]:
+    seconds = session_duration_seconds(start_iso, end_iso)
+    if seconds is None:
+        return None
+    return seconds / 60.0
 
 def as_int(value: Any) -> Optional[int]:
     try:
@@ -266,8 +271,10 @@ def build_hardware_row(
         "pid": summary_row.get("pid"),
         "night_number": as_int(summary_row.get("night_number")),
         "condition": as_int(summary_row.get("condition")),
-        "device_time_start": summary_row.get("device_time_start"),
-        "device_time_end": summary_row.get("device_time_end"),
+        "time_asleep": session_duration_minutes(
+            summary_row.get("device_time_start"),
+            summary_row.get("device_time_end"),
+        ),
         "rem_minutes": as_float(summary_row.get("rem_minutes")),
         "rem_motion_avg": as_float(summary_row.get("rem_motion_avg")),
         "induction_arousal_any": bool_to_int(summary_row.get("induction_arousal_any")),

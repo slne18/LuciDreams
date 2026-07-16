@@ -6,7 +6,7 @@ Scripts to export night data from Firebase, clean Qualtrics surveys, and build o
 
 | Path | Contents |
 |---|---|
-| `input/` | Raw Qualtrics exports (`onboarding.xlsx`, `dream_report.csv`) |
+| `input/` | Raw Qualtrics exports (`onboarding.csv`, `dream_report.csv`) |
 | `output/` | Firebase session exports (CSVs used to build hardware data) |
 | `output/analysis_data/` | Clean survey tables, filtered hardware nights, merged analysis file |
 
@@ -38,7 +38,7 @@ python3 data_prep/export_night_data.py --local-file path/to/sessions.json
 
 Place fresh survey exports in `data_prep/input/`:
 
-- `onboarding.xlsx`
+- `onboarding.csv`
 - `dream_report.csv`
 
 ## 3. Clean survey data

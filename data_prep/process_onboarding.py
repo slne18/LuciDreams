@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Clean Qualtrics onboarding export (onboarding.xlsx).
+Clean Qualtrics onboarding export (onboarding.csv or .xlsx).
 
 Steps:
   1. Drop file row 1 (English Qualtrics keys) and row 3 (ImportId); use row 2 as header.
@@ -10,7 +10,7 @@ Steps:
   5. Drop voice-consent, pacemaker, signature, and Part1–Part4 columns; rename selected survey columns.
   6. Add baseline_LD_freq_ord (0 = lowest lucid-dream frequency, 6 = highest).
 
-Default input:  data_prep/input/onboarding.xlsx
+Default input:  data_prep/input/onboarding.csv
 Default output: data_prep/output/analysis_data/onboarding_clean.csv
 """
 
@@ -24,7 +24,7 @@ from typing import List, Sequence
 import pandas as pd
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_INPUT = os.path.join(BASE_DIR, "input", "onboarding.xlsx")
+DEFAULT_INPUT = os.path.join(BASE_DIR, "input", "onboarding.csv")
 DEFAULT_OUTPUT = os.path.join(BASE_DIR, "output", "analysis_data", "onboarding_clean.csv")
 
 # Qualtrics metadata columns A through Q (0-based indices 0-16); column R starts at Q6.
@@ -95,7 +95,7 @@ def drop_metadata_columns(header: Sequence[str], rows: List[List[str]]) -> tuple
             f"Expected survey columns after column R, found only {len(header)} columns"
         )
 
-    trimmed_header = header[METADATA_COLUMN_COUNT:]
+    trimmed_header = list(header[METADATA_COLUMN_COUNT:])
     trimmed_rows: List[List[str]] = []
     for row in rows:
         if len(row) < len(header):

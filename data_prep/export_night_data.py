@@ -15,6 +15,8 @@ import argparse
 import csv
 import json
 import os
+import shutil
+import tempfile
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -492,11 +494,22 @@ def extract_session_detail_rows(item):
 
 
 def write_csv(path, fieldnames, rows):
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    path = os.path.abspath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Write via /tmp first: overwriting large Desktop/iCloud files can hit Errno 60.
+    fd, tmp_path = tempfile.mkstemp(prefix="luci_export_", suffix=".csv")
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        shutil.move(tmp_path, path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def main():

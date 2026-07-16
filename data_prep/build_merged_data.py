@@ -58,7 +58,7 @@ DREAM_REDUNDANT_COLUMNS = (
     "arousal_reached_count",
     "wake_time",
 )
-OUTPUT_COLUMNS_TO_DROP = ("night_number",)
+OUTPUT_COLUMNS_TO_DROP = ("night_number", "device_time_start")
 
 HARDWARE_KEY_COLUMNS = ("pid", "night_number", "device_time_start")
 REM_MINUTES_COLUMN = "rem_minutes"
@@ -323,6 +323,32 @@ def explain_unmatched(
     }
 
 
+def enrich_hardware_for_matching(
+    hardware: pd.DataFrame,
+    night_summary: Optional[pd.DataFrame],
+) -> pd.DataFrame:
+    """Add device_time_start from night_summary for dream-report matching."""
+    if "device_time_start" in hardware.columns:
+        return hardware
+
+    if night_summary is None or "device_time_start" not in night_summary.columns:
+        raise ValueError(
+            "hardware_data.xlsx has no device_time_start column; "
+            "provide night_summary.csv to match dream reports."
+        )
+
+    summary = night_summary.copy()
+    enriched = hardware.copy()
+    enriched["pid"] = enriched["pid"].map(normalize_pid)
+    enriched["night_number"] = enriched["night_number"].map(normalize_night_number)
+    summary["pid"] = summary["pid"].map(normalize_pid)
+    summary["night_number"] = summary["night_number"].map(normalize_night_number)
+    summary_keys = summary[["pid", "night_number", "device_time_start"]].drop_duplicates(
+        subset=["pid", "night_number"]
+    )
+    return enriched.merge(summary_keys, on=["pid", "night_number"], how="left")
+
+
 def merge_hardware_and_dream(
     hardware_path: str,
     dream_path: str,
@@ -331,12 +357,16 @@ def merge_hardware_and_dream(
     night_summary_path: Optional[str] = None,
     onboarding_path: Optional[str] = None,
 ) -> dict[str, int]:
-    hardware = prepare_dataframe(pd.read_excel(hardware_path))
-    dream = prepare_dataframe(pd.read_csv(dream_path))
-
+    hardware_raw = pd.read_excel(hardware_path)
     night_summary: Optional[pd.DataFrame] = None
     if night_summary_path and os.path.isfile(night_summary_path):
-        night_summary = prepare_dataframe(pd.read_csv(night_summary_path))
+        night_summary = pd.read_csv(night_summary_path)
+
+    hardware = prepare_dataframe(enrich_hardware_for_matching(hardware_raw, night_summary))
+    dream = prepare_dataframe(pd.read_csv(dream_path))
+
+    if night_summary is not None:
+        night_summary = prepare_dataframe(night_summary)
 
     missing_dream_keys = [col for col in HARDWARE_KEY_COLUMNS if col not in dream.columns]
     if missing_dream_keys:

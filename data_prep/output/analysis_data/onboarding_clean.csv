@@ -136,3 +136,136 @@ Age,Gender,baseline_LD_freq,baseline_LD_freq_ord,baseline_sleep_qual,PID
 36,Female,Less than once per year,1,4,239292463446
 57,Female,Monthly,3,6,749792733206
 62,Female,Less than once per year,1,8,629922263296
+38,Female,Never,0,8,449582833316
+24,Female,Less than once per year,1,4,839812403536
+56,Female,Weekly,4,8,869982873836
+26,Female,A few times per year,2,5,469312283336
+64,Male,Weekly,4,7,499872833196
+33,Female,Monthly,3,8,139592793116
+56,Female,A few times per year,2,6,229582903536
+,,,,,879312573236
+33,Male,Less than once per year,1,7,469522453716
+42,Male,A few times per year,2,7,929272753896
+71,Female,A few times per year,2,8,139662433656
+41,Female,Less than once per year,1,7,769492153716
+48,Female,Monthly,3,8,839412743156
+40,Female,A few times per year,2,6,599392853296
+57,Female,A few times per year,2,9,529852523606
+65,Female,A few times per year,2,8,649782913996
+57,Female,Weekly,4,4,839792973696
+48,Female,A few times per year,2,3,559622943316
+34,Female,Monthly,3,5,649512743796
+26,Male,Never,0,3,259272303886
+51,Male,A few times per year,2,8,659872203176
+41,Female,Weekly,4,5,599562123966
+47,Non-binary,Less than once per year,1,8,189762763386
+25,Non-binary,A few times per year,2,6,869822633666
+51,Female,A few times per year,2,4,259782593846
+67,Male,A few times per year,2,4,979412933886
+30,Male,Less than once per year,1,6,999342283466
+50,Female,A few times per year,2,8,559882943976
+71,Male,Less than once per year,1,8,639752983556
+23,Male,Less than once per year,1,5,709992693866
+56,Male,A few times per year,2,5,889112933306
+31,Male,Monthly,3,2,869342773536
+22,Female,Never,0,3,259822373756
+72,Male,A few times per year,2,8,189682573926
+,,,,,869332393776
+48,Male,A few times per year,2,5,639322453476
+19,Female,Never,0,9,299492193356
+50,Female,A few times per year,2,10,199992373986
+56,Male,Less than once per year,1,5,769802973746
+60,Male,A few times per year,2,7,429952943496
+68,Male,A few times per year,2,6,689482503446
+74,Female,A few times per year,2,5,889432873656
+33,Female,Monthly,3,8,539412483836
+22,Female,A few times per year,2,6,809282193516
+45,Female,Never,0,6,389132113316
+45,Female,A few times per year,2,7,989422303806
+40,Female,A few times per year,2,6,519712933526
+53,Female,Less than once per year,1,7,179142343526
+36,Female,Several times per week,5,7,169142963656
+37,Female,A few times per year,2,7,239562233606
+64,Male,Monthly,3,5,359242963946
+50,Female,Monthly,3,6,299342693996
+52,Female,A few times per year,2,3,769772243286
+60,Female,Monthly,3,8,439752783216
+64,Female,Monthly,3,5,349462673936
+49,Female,Less than once per year,1,8,269832563256
+57,Male,Monthly,3,7,729512183566
+43,Non-binary,Never,0,2,579462983526
+64,Female,A few times per year,2,7,999252563296
+57,Female,A few times per year,2,5,929192283546
+31,Female,A few times per year,2,3,569812923436
+71,Female,Weekly,4,5,579562183996
+39,Female,Less than once per year,1,7,589702833326
+49,Female,Monthly,3,5,669362823256
+49,Female,Monthly,3,5,529602933826
+32,Female,Never,0,7,759552453256
+36,Female,A few times per year,2,7,459212683806
+21,Female,A few times per year,2,7,689222633176
+53,Female,A few times per year,2,7,439442713976
+37,Male,Less than once per year,1,7,389482323236
+31,Male,Never,0,7,109362583776
+36,Male,A few times per year,2,7,339892283166
+72,Male,A few times per year,2,7,869982223106
+20,Male,Less than once per year,1,6,729422983146
+40,Female,A few times per year,2,6,379282433176
+44,Male,Monthly,3,8,319752343866
+42,Male,Weekly,4,7,939692833756
+89,Male,Less than once per year,1,7,229812553586
+89,Male,A few times per year,2,7,659392883236
+69,Male,Less than once per year,1,9,219962573646
+55,Male,A few times per year,2,7,909452723546
+44,Male,Never,0,4,899242283356
+68,Female,A few times per year,2,6,199302983846
+60,Female,Less than once per year,1,7,299522183446
+46,Female,Never,0,6,849692143376
+58,Male,Monthly,3,6,999102773206
+41,Female,Several times per week,5,5,509932613236
+24,Male,Never,0,7,989232823696
+67,Female,Weekly,4,8,899352433976
+36,Female,Less than once per year,1,4,769762353206
+44,Female,Less than once per year,1,8,329182283526
+67,Male,Weekly,4,5,739962763826
+29,Male,Never,0,8,549902793586
+24,Male,Weekly,4,6,609722783676
+,,,,,239442313176
+41,Female,A few times per year,2,7,119112613586
+38,Non-binary,Monthly,3,5,849372573176
+65,Female,A few times per year,2,8,919812563746
+65,Female,A few times per year,2,9,749182913636
+73,Male,Never,0,7,739282883846
+29,Male,Less than once per year,1,4,189452733246
+24,Male,Never,0,7,679462883636
+41,Female,Weekly,4,8,349262643676
+23,Male,Monthly,3,4,359592283456
+45,Male,Less than once per year,1,7,749312983176
+38,Female,Never,0,2,819412983246
+47,Female,Daily (including multiple times per night),6,5,439612553576
+42,Male,Less than once per year,1,6,149342883826
+70,Female,Never,0,5,179122473836
+37,Male,A few times per year,2,8,359852143976
+20,Male,A few times per year,2,6,269762463116
+34,Male,A few times per year,2,7,779922573816
+45,Male,Never,0,8,969522133156
+31,Male,A few times per year,2,7,489232283756
+46,Male,Less than once per year,1,5,659262163686
+64,Male,Weekly,4,7,129172393886
+42,Male,Never,0,10,519882343906
+36,Male,Never,0,5,399992583976
+20,Female,Monthly,3,8,629182453426
+45,Female,A few times per year,2,5,539822283526
+32,Female,Monthly,3,8,519692863646
+55,Male,Less than once per year,1,6,629552623176
+30,Female,Less than once per year,1,8,169682403356
+34,Male,Daily (including multiple times per night),6,7,689242493936
+31,Non-binary,A few times per year,2,3,369582543516
+60,Male,A few times per year,2,6,809172613146
+24,Male,Never,0,7,779482733116
+36,Female,Weekly,4,6,689312933166
+42,Male,A few times per year,2,8,819682193876
+55,Female,A few times per year,2,6,559472613156
+36,Female,Less than once per year,1,6,929262723346
+36,Female,Never,0,5,419662753906
+22,Male,Monthly,3,7,789652803586
