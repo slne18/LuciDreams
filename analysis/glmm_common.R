@@ -35,10 +35,22 @@ log_cat <- function(...) {
 
 resolve_input_file <- function(script_dir) {
   explicit <- Sys.getenv("LUCIDREAMS_MERGED_DATA", "")
+  rel <- file.path("data_prep", "output", "analysis_data")
+  base_candidates <- unique(normalizePath(c(
+    script_dir,
+    file.path(script_dir, ".."),
+    file.path(script_dir, "..", ".."),
+    file.path(script_dir, "..", "..", "..")
+  ), winslash = "/", mustWork = FALSE))
+
   candidates <- c(
     explicit,
-    file.path(script_dir, "..", "..", "data_prep", "output", "analysis_data", "merged_data.xlsx"),
-    file.path(script_dir, "..", "..", "data_prep", "output", "analysis_data", "merged_data.csv")
+    unlist(lapply(base_candidates, function(root) {
+      c(
+        file.path(root, rel, "merged_data.xlsx"),
+        file.path(root, rel, "merged_data.csv")
+      )
+    }), use.names = FALSE)
   )
 
   for (path in candidates) {

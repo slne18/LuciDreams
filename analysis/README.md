@@ -8,6 +8,14 @@ R scripts for mixed models on `data_prep/output/analysis_data/merged_data.xlsx`.
 install.packages(c("readxl", "glmmTMB", "broom.mixed", "car", "ordinal"))
 ```
 
+## Descriptive statistics (all Model A/B/C variables)
+
+```bash
+Rscript analysis/descriptive_stats.R
+```
+
+Summarises participant characteristics and all numeric/binary/categorical variables used in Models A, B, and C from `merged_data.xlsx`. Writes CSVs and a log to `analysis/results/`.
+
 ## Model A — participant factors
 
 ```bash

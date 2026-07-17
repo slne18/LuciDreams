@@ -1,0 +1,17 @@
+"characteristic","statistic","value","n"
+"Participants","n","65",65
+"Nights recorded","n","224",224
+"Nights per participant","mean (SD)","3.45 (3.91)",65
+"Nights per participant","median [IQR]","2.00 [1.00, 4.00]",65
+"Age (years)","mean (SD)","41.52 (17.42)",61
+"Age (years)","median [IQR]","42.00 [24.00, 50.00]",61
+"Baseline lucid-dream frequency (ordinal)","mean (SD)","1.74 (1.33)",61
+"Baseline lucid-dream frequency (ordinal)","median [IQR]","2.00 [1.00, 2.00]",61
+"Baseline sleep quality (0-10)","mean (SD)","6.57 (1.31)",61
+"Baseline sleep quality (0-10)","median [IQR]","7.00 [6.00, 8.00]",61
+"Sex","Female","35 (53.8%)",65
+"Sex","Male","24 (36.9%)",65
+"Sex","Missing/Unknown","4 (6.2%)",65
+"Sex","Non-binary","2 (3.1%)",65
+"Lucid dream rate (proportion of recorded nights)","mean (SD)","0.12 (0.27)",65
+"Lucid dream rate (proportion of recorded nights)","median [IQR]","0.00 [0.00, 0.00]",65

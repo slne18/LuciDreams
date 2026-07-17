@@ -1,0 +1,6 @@
+"variable","n","mean","sd","median","p25","p75","min","max"
+"You feel more restless than usual",127,1.92913385826772,1.58455392732669,2,0,3,0,5
+"You woke up more than usual during last night",127,2.17322834645669,1.7140617693162,2,1,4,0,5
+"Waking up in the morning was more difficult than usual",127,1.63779527559055,1.48895026054943,1,0,3,0,5
+"It took longer than usual to wake up",127,1.40944881889764,1.39928740769859,1,0,2,0,5
+"You felt more tired than usual when waking up",127,2.04724409448819,1.65643654488984,2,1,4,0,5
