@@ -222,6 +222,20 @@ def list_sessions(
     return items
 
 
+def parse_rem_episodes(value: Optional[str]) -> Optional[List[int]]:
+    if value is None or not str(value).strip():
+        return None
+    out: List[int] = []
+    for part in str(value).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        out.append(int(part))
+    if not out:
+        return None
+    return out
+
+
 def as_int(value: str) -> Optional[int]:
     try:
         return int(float(value))
@@ -395,6 +409,19 @@ def plot_one_session(
         })
 
     rem_eps.sort(key=lambda d: d["episode_index"])
+    rem_episode_selection = parse_rem_episodes(args.rem_episodes)
+    if rem_episode_selection is not None:
+        available = {ep["episode_index"] for ep in rem_eps}
+        missing = [idx for idx in rem_episode_selection if idx not in available]
+        if missing:
+            raise ValueError(
+                f"REM episode(s) not found: {missing}. Available episode_index values: {sorted(available)}"
+            )
+        order = {idx: pos for pos, idx in enumerate(rem_episode_selection)}
+        rem_eps = sorted(
+            [ep for ep in rem_eps if ep["episode_index"] in rem_episode_selection],
+            key=lambda d: order[d["episode_index"]],
+        )
 
     # Cue events by episode.
     cues_by_episode = defaultdict(list)
@@ -624,6 +651,11 @@ def main() -> None:
     )
     parser.add_argument("--session-start-boston", default=None, help="HH:MM:SS")
     parser.add_argument("--plot-mode", choices=["overview", "per-rem", "both"], default="both")
+    parser.add_argument(
+        "--rem-episodes",
+        default=None,
+        help="Comma-separated REM episode_index values to plot (e.g. 0,2,3,4,9). Default: all REM episodes in session.",
+    )
     parser.add_argument("--both-phases-only", action="store_true", help="Only keep REM episodes that have both disruptive and induction cues")
     parser.add_argument("--per-rem-pre-sec", type=int, default=180, help="Seconds shown before REM start in per-rem mode")
     parser.add_argument("--per-rem-post-sec", type=int, default=180, help="Seconds shown after REM end in per-rem mode")

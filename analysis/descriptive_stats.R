@@ -332,10 +332,10 @@ cat_df <- do.call(
 )
 print(cat_df, row.names = FALSE)
 
-model_b_df <- df[as.integer(df$condition) %in% 0:3, , drop = FALSE]
-model_c_df <- df[as.integer(df$lucid_state) == 0 & as.integer(df$condition) %in% 4:5, , drop = FALSE]
+model_b_df <- df[stats::complete.cases(df[, c("condition", "pid", MORNING_SLEEP_ITEMS)]), , drop = FALSE]
+model_c_df <- df[stats::complete.cases(df[, c("condition", "pid", DREAM_SUBSCALES)]), , drop = FALSE]
 
-cat("\n===== Model B subset (conditions 0-3, n =", nrow(model_b_df), ") =====\n")
+cat("\n===== Model B subset (all conditions, n =", nrow(model_b_df), ") =====\n")
 if (nrow(model_b_df) > 0) {
   print(table(model_b_df$condition), useNA = "ifany")
   b_sleep <- do.call(
@@ -345,7 +345,7 @@ if (nrow(model_b_df) > 0) {
   print(b_sleep, row.names = FALSE)
 }
 
-cat("\n===== Model C subset (non-lucid, conditions 4-5, n =", nrow(model_c_df), ") =====\n")
+cat("\n===== Model C subset (all nights, all conditions, n =", nrow(model_c_df), ") =====\n")
 if (nrow(model_c_df) > 0) {
   print(table(model_c_df$condition), useNA = "ifany")
   c_sub <- do.call(

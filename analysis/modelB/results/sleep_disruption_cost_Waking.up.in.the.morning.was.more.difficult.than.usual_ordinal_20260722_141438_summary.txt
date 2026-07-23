@@ -1,0 +1,31 @@
+Cumulative Link Mixed Model fitted with the Laplace approximation
+
+formula: Waking.up.in.the.morning.was.more.difficult.than.usual_ord ~  
+    condition + (1 | pid)
+data:    data
+
+ link  threshold nobs logLik  AIC    niter     max.grad cond.H 
+ logit flexible  223  -314.35 654.70 895(4451) 2.30e-04 1.5e+02
+
+Random effects:
+ Groups Name        Variance Std.Dev.
+ pid    (Intercept) 3.746    1.935   
+Number of groups:  pid 65 
+
+Coefficients:
+           Estimate Std. Error z value Pr(>|z|)
+condition1  0.61605    0.52819   1.166    0.243
+condition2  0.26716    0.54986   0.486    0.627
+condition3 -0.39916    0.54448  -0.733    0.463
+condition4  0.05383    0.56925   0.095    0.925
+condition5 -0.10995    0.56645  -0.194    0.846
+condition6  0.30495    0.59997   0.508    0.611
+condition7 -0.05916    0.57492  -0.103    0.918
+
+Threshold coefficients:
+    Estimate Std. Error z value
+0|1  -1.4370     0.4686  -3.067
+1|2   0.6405     0.4567   1.403
+2|3   1.7421     0.4701   3.706
+3|4   3.2592     0.5187   6.284
+4|5   5.4531     0.6976   7.817

@@ -1,0 +1,30 @@
+ Family: gaussian  ( identity )
+Formula:          
+`It took longer than usual to wake up` ~ condition + (1 | pid)
+Data: data
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    746.1     780.1    -363.0     726.1       213 
+
+Random effects:
+
+Conditional model:
+ Groups   Name        Variance Std.Dev.
+ pid      (Intercept) 0.5528   0.7435  
+ Residual             1.2064   1.0983  
+Number of obs: 223, groups:  pid, 65
+
+Dispersion estimate for gaussian family (sigma^2): 1.21 
+
+Conditional model:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  1.45967    0.21280   6.859 6.92e-12 ***
+condition1  -0.07242    0.28563  -0.254    0.800    
+condition2  -0.06532    0.30472  -0.214    0.830    
+condition3  -0.16009    0.29013  -0.552    0.581    
+condition4  -0.13282    0.31413  -0.423    0.672    
+condition5  -0.23938    0.30001  -0.798    0.425    
+condition6   0.12703    0.32126   0.395    0.693    
+condition7  -0.21476    0.31007  -0.693    0.489    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1

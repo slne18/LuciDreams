@@ -33,6 +33,14 @@ Continuous predictors are log1p-transformed and z-scored; `Gender` is a factor (
 
 Results are written to `analysis/modelA/results/` (`_summary.txt`, `_coefficients.csv`).
 
+### Condition only (`conditions.R`)
+
+```bash
+Rscript analysis/modelA/conditions.R
+```
+
+Outcome: `lucid_state`. Single predictor: `condition` (factor; reference = most common level). Formula: `lucid ~ condition + (1 | pid)`.
+
 ### Device stimulation (`device_stim.R`)
 
 ```bash
@@ -47,32 +55,36 @@ Also writes collinearity diagnostics (`_collinearity.txt`, `_collinearity_correl
 
 Optional: point to another merged file with `LUCIDREAMS_MERGED_DATA=/path/to/merged_data.xlsx`.
 
-## Model B — sleep disruption cost
+## Model B — sleep disruption cost (all conditions)
 
 ```bash
 Rscript analysis/modelB/sleep_disruption_cost.R
 ```
 
-Tests whether disruptive stimulation conditions (tactile=1, flashlight=2, audio=3) lower subjective sleep quality vs sham (0).
+Tests whether stimulation `condition` affects subjective morning sleep quality across all recorded nights.
 
 Outcomes (0–5 morning items):
 - restlessness, wake-ups, waking difficulty, time to wake, morning tiredness
 
-One **linear** and one **ordinal** GLMM per outcome: `outcome ~ condition + (1 | pid)`, reference = sham.
+One **linear** and one **ordinal** GLMM per outcome: `outcome ~ condition + (1 | pid)`, reference = most common condition level.
 
 Results in `analysis/modelB/results/`, plus a combined `_all_coefficients_*.csv`.
 
-## Model C — dream subscales (condition 4 vs 5, non-lucid nights)
+## Model C — dream subscales (all conditions, all nights)
 
 ```bash
-Rscript analysis/modelC/dream_subscales_4vs5.R
+Rscript analysis/modelC/dream_subscales.R
 ```
 
-Tests whether condition 5 yields higher lucidity-related subscale scores than condition 4 on nights without full lucid control (`lucid_state = 0`).
+Tests whether dream lucidity subscale scores differ by stimulation `condition` across all recorded nights (no lucidity or condition subset).
 
 Outcomes (0–5 subscales):
 - dream unreality, self/other-body awareness, no real-world consequences, reality checks, dream characters unreality
 
-One **linear** and one **ordinal** GLMM per outcome: `subscale ~ condition + (1 | pid)`, reference = condition 4.
+One **linear** and one **ordinal** GLMM per outcome: `subscale ~ condition + (1 | pid)`, reference = most common condition level.
 
 Results in `analysis/modelC/results/`, plus `_all_coefficients_*.csv`.
+
+## LLM dream scoring (optional extra features)
+
+See `LLM_agent/README.md`. Scores free-text dream reports into `awareness_score`, `control_score`, `cue_incorporation`, and `bizarreness_count` for additional models.

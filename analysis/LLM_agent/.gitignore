@@ -1,0 +1,8 @@
+output/*.csv
+output/*.jsonl
+output/*.xlsx
+
+# API keys and local secrets
+.env
+.env.*
+!.env.example

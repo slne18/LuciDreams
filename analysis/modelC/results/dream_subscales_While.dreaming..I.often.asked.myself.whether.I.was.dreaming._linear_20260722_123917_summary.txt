@@ -1,0 +1,31 @@
+ Family: gaussian  ( identity )
+Formula:          
+`While dreaming, I often asked myself whether I was dreaming.` ~  
+    condition + (1 | pid)
+Data: data
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    549.1     583.2    -264.6     529.1       213 
+
+Random effects:
+
+Conditional model:
+ Groups   Name        Variance Std.Dev.
+ pid      (Intercept) 0.5084   0.713   
+ Residual             0.4212   0.649   
+Number of obs: 223, groups:  pid, 65
+
+Dispersion estimate for gaussian family (sigma^2): 0.421 
+
+Conditional model:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  0.81562    0.14879   5.482 4.22e-08 ***
+condition1  -0.27768    0.17782  -1.562   0.1184    
+condition2  -0.22148    0.18831  -1.176   0.2395    
+condition3  -0.07374    0.18048  -0.409   0.6828    
+condition4  -0.13791    0.19701  -0.700   0.4839    
+condition5  -0.40743    0.18729  -2.175   0.0296 *  
+condition6   0.04544    0.19898   0.228   0.8193    
+condition7  -0.15492    0.18954  -0.817   0.4137    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1

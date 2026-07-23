@@ -1,0 +1,26 @@
+ Family: binomial  ( logit )
+Formula:          lucid ~ condition + (1 | pid)
+Data: data
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    177.0     207.6     -79.5     159.0       214 
+
+Random effects:
+
+Conditional model:
+ Groups Name        Variance Std.Dev.
+ pid    (Intercept) 28.73    5.36    
+Number of obs: 223, groups:  pid, 65
+
+Conditional model:
+            Estimate Std. Error z value Pr(>|z|)   
+(Intercept)  -6.9445     2.3417  -2.966  0.00302 **
+condition1    2.4564     1.2353   1.988  0.04675 * 
+condition2    0.8062     1.3085   0.616  0.53781   
+condition3   -0.3166     1.3328  -0.238  0.81226   
+condition4    0.8096     1.2896   0.628  0.53012   
+condition5    1.1356     1.2618   0.900  0.36813   
+condition6    1.5537     1.3168   1.180  0.23806   
+condition7    1.3702     1.2785   1.072  0.28382   
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1

@@ -1,0 +1,32 @@
+Cumulative Link Mixed Model fitted with the Laplace approximation
+
+formula: 
+While.dreaming..I.was.aware.of.the.fact.that.other.dream.characters.in.my.dream.were.not.real._ord ~  
+    condition + (1 | pid)
+data:    data
+
+ link  threshold nobs logLik  AIC    niter     max.grad cond.H 
+ logit flexible  223  -249.87 525.74 948(7390) 1.87e-06 2.0e+02
+
+Random effects:
+ Groups Name        Variance Std.Dev.
+ pid    (Intercept) 9.999    3.162   
+Number of groups:  pid 65 
+
+Coefficients:
+           Estimate Std. Error z value Pr(>|z|)
+condition1  0.32959    0.66403   0.496    0.620
+condition2  0.02682    0.65456   0.041    0.967
+condition3 -0.36158    0.64397  -0.561    0.574
+condition4 -0.38673    0.70940  -0.545    0.586
+condition5  0.18815    0.67948   0.277    0.782
+condition6  0.71908    0.71404   1.007    0.314
+condition7  0.55010    0.67793   0.811    0.417
+
+Threshold coefficients:
+    Estimate Std. Error z value
+0|1   0.1812     0.6464   0.280
+1|2   3.3356     0.7281   4.581
+2|3   4.0735     0.7557   5.391
+3|4   5.7916     0.8234   7.034
+4|5   7.2843     0.9121   7.986

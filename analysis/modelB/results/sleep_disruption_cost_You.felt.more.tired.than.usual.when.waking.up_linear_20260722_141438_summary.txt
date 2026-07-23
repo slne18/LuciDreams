@@ -1,0 +1,30 @@
+ Family: gaussian  ( identity )
+Formula:          
+`You felt more tired than usual when waking up` ~ condition +      (1 | pid)
+Data: data
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    775.0     809.1    -377.5     755.0       213 
+
+Random effects:
+
+Conditional model:
+ Groups   Name        Variance Std.Dev.
+ pid      (Intercept) 1.160    1.077   
+ Residual             1.214    1.102   
+Number of obs: 223, groups:  pid, 65
+
+Dispersion estimate for gaussian family (sigma^2): 1.21 
+
+Conditional model:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)   2.1124     0.2397   8.814   <2e-16 ***
+condition1    0.1420     0.2967   0.479   0.6323    
+condition2   -0.3682     0.3136  -1.174   0.2405    
+condition3   -0.3406     0.3001  -1.135   0.2564    
+condition4   -0.6396     0.3267  -1.958   0.0503 .  
+condition5   -0.5813     0.3109  -1.870   0.0615 .  
+condition6   -0.2323     0.3331  -0.697   0.4856    
+condition7   -0.1028     0.3180  -0.323   0.7464    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
