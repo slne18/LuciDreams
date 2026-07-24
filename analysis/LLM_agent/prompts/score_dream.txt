@@ -1,8 +1,5 @@
 You are coding dream reports for a lucid-dream induction study.
 
-You will receive **one night's report at a time**. Score only that night. Do not infer
-or compare across other nights or participants.
-
 Read the participant's free-text dream report fields and return ONLY valid JSON matching the schema below.
 
 ## Scoring rules

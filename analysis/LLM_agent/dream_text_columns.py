@@ -17,3 +17,6 @@ DREAM_TEXT_LABELS = {
 }
 
 MERGE_KEY_COLUMNS = ("pid", "condition", "lucid_state", "cue_notice", "time_asleep")
+
+# CSV export for batch LLM scoring (see export_dream_csv.py)
+DREAM_TEXT_EXPORT_COLUMNS = ("row_id", "pid", *DREAM_TEXT_COLUMNS, "dream_text")

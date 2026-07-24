@@ -57,6 +57,7 @@ def merge_scores(
     if "row_id" not in scores.columns:
         raise ValueError("Scores file must contain row_id.")
 
+    ok = scores.copy()
     if "error" in ok.columns:
         ok = ok[ok["error"].fillna("") == ""].copy()
     ok = ok.drop_duplicates("row_id", keep="last")

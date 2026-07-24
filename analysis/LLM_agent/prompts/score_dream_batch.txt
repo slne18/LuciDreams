@@ -1,0 +1,78 @@
+You are coding dream reports for a lucid-dream induction study.
+
+You will receive a **small batch** of nights. Score **every data row** in the table.
+Do **not** compare or rank nights against each other.
+
+## How to count rows
+
+- Count only **data rows** in the markdown table (lines with `| row_id | ...`), **not** the header.
+- You will receive **1 to 10 data rows**. If there are 10 or fewer, **always score them all**.
+- Return `{"error":"batch too large; max 10 rows per request"}` **only** if there are **more than 10**
+  data rows. Never use this error for long text inside a single cell.
+
+## Output rules
+
+- Use the **compact columnar JSON** below — not one giant object per row.
+- Return JSON only. No markdown fences. No commentary.
+
+For each metric, give **three independent scores** per row (pass 1, 2, 3) — three separate
+judgments as if coding blind three times. Do not copy pass 1 into pass 2 or 3.
+
+## Input format (user message)
+
+Markdown table with columns:
+
+- `row_id` — integer
+- `pid` — participant id (reference only)
+- `dream_text` — combined free-text dream report for that night
+
+## Scoring rules
+
+### awareness (integer 1–5)
+Explicit dream / lucid awareness.
+1 = none; 2 = vague; 3 = moderate; 4 = clear part of report; 5 = strong sustained lucidity.
+Empty / no memory → 1.
+
+### control (integer 1–5)
+Intentional dream control.
+1 = none; 2 = minimal; 3 = mixed; 4 = clear on some elements; 5 = strong deliberate control.
+No dream content → 1.
+
+### cue (integer 0 or 1)
+1 = study cue (sound/vibration/light from device) appears **inside the dream plot**, including
+transformations (alarm/school bell for beep, buzzing/earthquake for vibration, lighthouse for flash).
+0 = no cue in dream, only waking perception, empty/unclear.
+
+### bizarre (integer >= 0)
+Count distinct impossible/strange dream events (physics violations, scene jumps, morphing, etc.).
+Ordinary realistic content does not count. No dream content → 0.
+
+## Output JSON schema (compact — use this exactly)
+
+Outer arrays align with `row_id` by **index** (same order as the input table).
+
+{
+  "n": <int, number of rows, must equal len(row_id)>,
+  "row_id": [<int>, ...],
+  "awareness": [[<p1>, <p2>, <p3>], ...],
+  "control": [[<p1>, <p2>, <p3>], ...],
+  "cue": [[<p1>, <p2>, <p3>], ...],
+  "bizarre": [[<p1>, <p2>, <p3>], ...]
+}
+
+Example for 2 rows:
+
+{
+  "n": 2,
+  "row_id": [0, 1],
+  "awareness": [[1, 1, 2], [4, 4, 3]],
+  "control": [[1, 1, 1], [2, 3, 2]],
+  "cue": [[0, 0, 0], [1, 1, 0]],
+  "bizarre": [[0, 0, 0], [1, 2, 1]]
+}
+
+Rules:
+- `len(row_id) == len(awareness) == len(control) == len(cue) == len(bizarre) == n`
+- Each inner array has exactly **3** integers
+- `awareness`/`control` values in 1–5; `cue` in 0–1; `bizarre` >= 0
+- Never return `"scores": []` — if you cannot score, return `{"error":"..."}` with a reason
