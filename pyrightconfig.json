@@ -1,4 +1,6 @@
 {
-  "include": ["data_prep", "plot"],
-  "extraPaths": ["plot"]
+  "include": ["data_prep", "plot", "analysis"],
+  "extraPaths": ["plot", "analysis/LLM_agent"],
+  "venvPath": ".",
+  "venv": ".venv"
 }

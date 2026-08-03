@@ -3,11 +3,11 @@
 """
 Plot EEG by REM phase.
 
-Overview mode: full session with REM windows and cues.
+Overview mode: full session with REM windows and disruptive cues.
 
 Per-REM mode: pick the longest REM episode in the session, split it and
 ±context windows into fixed-length segments (default 30s), and plot one panel
-per segment with EEG RAW_AF7/RAW_AF8 and cue markers.
+per segment with EEG RAW_AF7/RAW_AF8 and disruptive cue markers.
 """
 
 import argparse
@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
 
@@ -33,10 +34,28 @@ EEG_DATA_DIR = os.path.join(BASE_DIR, "EEG")
 EEG_PLOTS_DIR = os.path.join(BASE_DIR, "eeg_plots")
 DEFAULT_OUTPUT_TEMPLATE = os.path.join(EEG_PLOTS_DIR, "eeg_rem_phases_{pid}.png")
 SECONDS_PER_DAY = 24 * 3600
-DEFAULT_LOWPASS_HZ = 40.0
+DEFAULT_LOWPASS_HZ = 20.0
 PER_REM_SEGMENT_SEC = 30.0
 DEFAULT_PER_REM_CONTEXT_SEC = 900.0
 EEG_YLIM = (-10.0, 1800.0)
+
+
+def read_csv_robust(path: str, **kwargs: Any) -> pd.DataFrame:
+    """Read CSV with retries; macOS iCloud can raise OSError errno 89 if not local."""
+    last_err: Optional[BaseException] = None
+    for attempt in range(3):
+        try:
+            return pd.read_csv(path, **kwargs)
+        except OSError as exc:
+            last_err = exc
+            if getattr(exc, "errno", None) != 89:
+                raise
+            time.sleep(1.5 * (attempt + 1))
+    raise OSError(
+        f"Could not read {path} (Operation canceled / errno 89). "
+        "On macOS this usually means the file is still in iCloud — in Finder, "
+        "right-click the file or parent folder and choose Download Now, then retry."
+    ) from last_err
 
 
 def scalar_float(value: Any) -> Optional[float]:
@@ -156,14 +175,25 @@ def estimate_sampling_hz(ts: pd.Series) -> Optional[float]:
     vals = pd.to_datetime(ts, errors="coerce").dropna()
     if len(vals) < 5:
         return None
+    duration = (vals.iloc[-1] - vals.iloc[0]).total_seconds()
+    fs_from_duration: Optional[float] = None
+    if duration > 0:
+        fs_from_duration = (len(vals) - 1) / duration
+
     diffs = vals.diff().dt.total_seconds().to_numpy()
-    diffs = diffs[np.isfinite(diffs) & (diffs > 0)]
-    if len(diffs) < 5:
-        return None
-    med = float(np.median(diffs))
-    if med <= 0:
-        return None
-    return 1.0 / med
+    diffs = diffs[np.isfinite(diffs) & (diffs > 0) & (diffs < 1.0)]
+    if len(diffs) >= 5:
+        fs_from_median = 1.0 / float(np.median(diffs))
+        # Muse CSVs often include many 1 ms timestamp steps; median diff can
+        # over-estimate fs (~1000 Hz). Prefer span-based rate when that happens.
+        if fs_from_median > 400 and fs_from_duration is not None and 50 < fs_from_duration < 500:
+            return fs_from_duration
+        if 50 < fs_from_median < 500:
+            return fs_from_median
+
+    if fs_from_duration is not None and 50 < fs_from_duration < 500:
+        return fs_from_duration
+    return None
 
 
 def bandpass_notch_filter(series: pd.Series, fs_hz: float, low_hz: float, high_hz: float, notch_hz: float, notch_q: float) -> pd.Series:
@@ -426,7 +456,6 @@ def plot_rem_segment_figure(
             )
 
         first_disruptive = True
-        first_induction = True
         for _, c in cues_ep.iterrows():
             cue_sod = c.get("event_sod")
             if is_missing(cue_sod):
@@ -436,6 +465,8 @@ def plot_rem_segment_figure(
                 continue
             cue_x = cue_abs - win_start_x
             ct = str(c.get("cue_type", "cue"))
+            if ct == "induction":
+                continue
             col = cue_color.get(ct, "tab:purple")
             tr_idx = c.get("train_index")
             tr_suffix = ""
@@ -445,9 +476,6 @@ def plot_rem_segment_figure(
             if ct == "disruptive" and first_disruptive:
                 cue_label = "Disruptive cue" + tr_suffix
                 first_disruptive = False
-            elif ct == "induction" and first_induction:
-                cue_label = "Induction cue" + tr_suffix
-                first_induction = False
             ax.axvline(cue_x, color=col, linestyle=":", linewidth=0.9, alpha=0.85, label=cue_label)
 
         dur = max(1, int(round(win_end_x - win_start_x)))
@@ -489,7 +517,7 @@ def plot_rem_segment_figure(
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Plot RAW_AF7/RAW_AF8 for each REM phase with cue markers.")
+    p = argparse.ArgumentParser(description="Plot RAW_AF7/RAW_AF8 for each REM phase with disruptive cue markers.")
     p.add_argument("--pid", default=None, help="Participant ID (e.g. Sole)")
     p.add_argument("--night-number", type=int, default=None, help="Night number from export_data (1-based within pid)")
     p.add_argument("--eeg-csv", default=None, help="Path to EEG csv. If omitted, tries EEG_<eeg-pid><night>.csv then fallbacks")
@@ -511,7 +539,7 @@ def main() -> None:
         type=float,
         default=DEFAULT_LOWPASS_HZ,
         dest="lowpass_hz",
-        help="Low-pass cutoff in Hz applied to RAW_AF7/RAW_AF8 before plotting (default: 40)",
+        help="Low-pass cutoff in Hz applied to RAW_AF7/RAW_AF8 before plotting (default: 20)",
     )
     p.add_argument("--per-rem-pre-sec", type=int, default=180, help="Deprecated (kept for CLI compatibility)")
     p.add_argument("--per-rem-post-sec", type=int, default=180, help="Deprecated (kept for CLI compatibility)")
@@ -540,7 +568,7 @@ def main() -> None:
     rem_episode_selection = parse_rem_episodes(args.rem_episodes)
 
     if args.all_sessions:
-        rem_df_all = pd.read_csv(args.rem_csv)
+        rem_df_all = read_csv_robust(args.rem_csv)
         sessions = list_rem_sessions(rem_df_all, args.pid, args.night_number, args.session_start_boston)
         if not sessions:
             raise ValueError("No sessions match the provided filters.")
@@ -676,8 +704,8 @@ def main() -> None:
         if eeg_csv is None:
             raise FileNotFoundError(f"EEG file not found. Tried: {candidates}")
 
-    rem_df = pd.read_csv(args.rem_csv)
-    cue_df = pd.read_csv(args.cue_csv)
+    rem_df = read_csv_robust(args.rem_csv)
+    cue_df = read_csv_robust(args.cue_csv)
 
     rem_df = choose_rem_session(rem_df, args.pid, args.session_start_boston, args.night_number)
     rem_df = cast(pd.DataFrame, rem_df)
@@ -713,8 +741,10 @@ def main() -> None:
                 keep.append(ep_idx)
         rem_df = rem_df[rem_df["episode_index"].isin(keep)].copy()
 
+    cue_df_plot = cue_df[cue_df["cue_type"] != "induction"].copy()
+
     # Load EEG with configurable low-pass filtering (no smoothing, no aggregation)
-    eeg = pd.read_csv(
+    eeg = read_csv_robust(
         eeg_csv,
         usecols=["TimeStamp", "RAW_AF7", "RAW_AF8"],
         parse_dates=["TimeStamp"],
@@ -779,12 +809,12 @@ def main() -> None:
         sess_overview = sess_overview.iloc[::stride].copy()
         print(f"Overview downsampling: kept 1/{stride} samples ({len(sess_overview)} points)")
 
-    cue_color = {"disruptive": "red", "induction": "green"}
+    cue_color = {"disruptive": "red"}
     rem_episode_ids = set(rem_df["episode_index"].astype(int).tolist())
     if no_rem_mode:
-        cues_sess = cue_df.copy()
+        cues_sess = cue_df_plot.copy()
     else:
-        cues_sess = cue_df[cue_df["episode_index"].astype(int).isin(rem_episode_ids)].copy()
+        cues_sess = cue_df_plot[cue_df_plot["episode_index"].astype(int).isin(rem_episode_ids)].copy()
 
     if args.plot_mode in ("overview", "both"):
         lp_txt = f"{args.lowpass_hz:g}Hz"
@@ -816,13 +846,15 @@ def main() -> None:
             first_rem_start_label = False
             first_rem_end_label = False
 
-        # Cue markers (no text labels by default to keep plot clean/fast).
+        # Disruptive cue markers only (induction cues omitted).
         for _, c in cues_sess.iterrows():
             cue_sod = c.get("event_sod")
             if is_missing(cue_sod):
                 continue
             cue_x = sec_of_day_to_elapsed(scalar_float(cue_sod) or 0.0, session_start_sod)
             ct = str(c.get("cue_type", "cue"))
+            if ct == "induction":
+                continue
             ax.axvline(cue_x, color=cue_color.get(ct, "tab:purple"), linestyle=":", linewidth=0.8, alpha=0.7)
 
         # Build concise HH:MM x ticks from elapsed seconds.

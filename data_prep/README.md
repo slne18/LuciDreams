@@ -12,11 +12,30 @@ Scripts to export night data from Firebase, clean Qualtrics surveys, and build o
 
 ## 1. Export from Firebase
 
-From the repo root (with Python deps and Firebase access configured):
+From the repo root, install Python deps once (use a venv if you like):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install -r data_prep/requirements.txt
+```
+
+In Cursor/VS Code: **Python: Select Interpreter** → choose `.venv/bin/python` so imports like
+`pandas` resolve in the editor.
 
 ```bash
 python3 data_prep/export_night_data.py
 ```
+
+**Incremental export** (only new Firebase sessions not already in `night_summary.csv`):
+
+```bash
+python3 data_prep/export_night_data.py --skip-existing
+```
+
+Matches on `session_doc_id`. Skips heavy motion/cue extraction for nights you already have
+and **appends** new detail rows to the existing CSVs. Still downloads all sessions from
+Firebase first — use `--pid` to limit scope if memory is tight.
 
 This writes to `data_prep/output/`:
 

@@ -512,6 +512,40 @@ def write_csv(path, fieldnames, rows):
         raise
 
 
+def append_csv(path, fieldnames, rows):
+    if not rows:
+        return
+    path = os.path.abspath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_header = not os.path.isfile(path)
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        if write_header:
+            writer.writeheader()
+        writer.writerows(rows)
+
+
+def read_csv_rows(path):
+    path = os.path.abspath(path)
+    if not os.path.isfile(path):
+        return []
+    with open(path, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def load_existing_session_doc_ids(summary_path):
+    rows = read_csv_rows(summary_path)
+    return {str(r["session_doc_id"]) for r in rows if r.get("session_doc_id")}
+
+
+def merge_summary_rows(existing_rows, new_rows):
+    new_ids = {str(r["session_doc_id"]) for r in new_rows if r.get("session_doc_id")}
+    kept = [r for r in existing_rows if str(r.get("session_doc_id", "")) not in new_ids]
+    merged = kept + new_rows
+    merged.sort(key=lambda r: (str(r["pid"]), int(r.get("night_number") or 0)))
+    return merged
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Export per-participant-night summary rows from LuciDreams sessions."
@@ -545,6 +579,14 @@ def main():
         default=None,
         help=f"Night summary CSV path (default: <output-dir>/night_summary.csv).",
     )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help=(
+            "Skip sessions already in night_summary.csv (by session_doc_id). "
+            "Merges new rows into existing CSV exports instead of replacing them."
+        ),
+    )
     args = parser.parse_args()
 
     sessions = load_sessions(args)
@@ -576,17 +618,27 @@ def main():
     output_dir = os.path.abspath(args.output_dir)
     summary_path = args.output or os.path.join(output_dir, "night_summary.csv")
 
+    existing_session_ids = set()
+    if args.skip_existing:
+        existing_session_ids = load_existing_session_doc_ids(summary_path)
+        if existing_session_ids:
+            print(f"Skipping {len(existing_session_ids)} sessions already in {summary_path}")
+
     summary_rows = []
     rem_rows = []
     cue_rows = []
     train_rows = []
     motion_rows = []
     smoothed_rows = []
+    skipped_existing = 0
 
     for item in prepared_sessions:
         if args.pid and str(item["pid"]) != str(args.pid):
             continue
         if args.night_number is not None and int(item.get("night_number") or -1) != int(args.night_number):
+            continue
+        if args.skip_existing and str(item["session_doc_id"]) in existing_session_ids:
+            skipped_existing += 1
             continue
         summary_rows.append(build_night_summary_row(item))
         s_rem, s_cues, s_trains, s_motion, s_smooth = extract_session_detail_rows(item)
@@ -597,34 +649,43 @@ def main():
         smoothed_rows.extend(s_smooth)
 
     summary_rows.sort(key=lambda r: (str(r["pid"]), int(r["night_number"] or 0)))
+    new_session_count = len(summary_rows)
+    incremental_merge = bool(args.skip_existing and existing_session_ids)
 
-    write_csv(
-        summary_path,
-        [
-            "pid",
-            "night_number",
-            "session_doc_id",
-            "condition",
-            "device_time_start",
-            "device_time_end",
-            "rem_minutes",
-            "rem_motion_avg",
-            "induction_arousal_volume",
-            "induction_arousal_count",
-            "induction_highest_volume",
-            "total_trains_delivered",
-            "native_api_is_native",
-            "native_api_torch",
-            "native_api_haptics",
-            "native_api_native_audio",
-            "native_api_status_json",
-            "disruptive_arousal_count",
-            "induction_arousal_any",
-            "disruptive_arousal_any",
-            "disruptive_arousal_volume",
-        ],
-        summary_rows,
-    )
+    if incremental_merge:
+        existing_summary = read_csv_rows(summary_path)
+        summary_rows = merge_summary_rows(existing_summary, summary_rows)
+        print(
+            f"Exported {new_session_count} new session(s); "
+            f"skipped {skipped_existing} already in {summary_path}"
+        )
+    elif args.skip_existing and skipped_existing:
+        print(f"Skipped {skipped_existing} existing session(s)")
+
+    summary_fields = [
+        "pid",
+        "night_number",
+        "session_doc_id",
+        "condition",
+        "device_time_start",
+        "device_time_end",
+        "rem_minutes",
+        "rem_motion_avg",
+        "induction_arousal_volume",
+        "induction_arousal_count",
+        "induction_highest_volume",
+        "total_trains_delivered",
+        "native_api_is_native",
+        "native_api_torch",
+        "native_api_haptics",
+        "native_api_native_audio",
+        "native_api_status_json",
+        "disruptive_arousal_count",
+        "induction_arousal_any",
+        "disruptive_arousal_any",
+        "disruptive_arousal_volume",
+    ]
+    write_csv(summary_path, summary_fields, summary_rows)
 
     rem_path = os.path.join(output_dir, "rem_episodes.csv")
     cues_path = os.path.join(output_dir, "cue_events.csv")
@@ -632,97 +693,86 @@ def main():
     motion_path = os.path.join(output_dir, "motion_per_second_series.csv")
     smoothed_path = os.path.join(output_dir, "motion_smoothed_series.csv")
 
-    write_csv(
-        rem_path,
-        [
-            "pid",
-            "night_number",
-            "condition",
-            "session_start_boston",
-            "session_end_boston",
-            "episode_index",
-            "episode_start_epoch_sec",
-            "episode_duration_sec",
-            "episode_start_boston",
-            "episode_end_boston",
-            "episode_motion_avg",
-        ],
-        rem_rows,
-    )
+    rem_fields = [
+        "pid",
+        "night_number",
+        "condition",
+        "session_start_boston",
+        "session_end_boston",
+        "episode_index",
+        "episode_start_epoch_sec",
+        "episode_duration_sec",
+        "episode_start_boston",
+        "episode_end_boston",
+        "episode_motion_avg",
+    ]
+    cue_fields = [
+        "pid",
+        "night_number",
+        "condition",
+        "episode_index",
+        "train_index",
+        "cue_index",
+        "cue_type",
+        "took_place",
+        "epoch_sec",
+        "event_time_boston",
+        "volume",
+        "arousal_detected",
+    ]
+    train_fields = [
+        "pid",
+        "night_number",
+        "condition",
+        "episode_index",
+        "train_index",
+        "disruptive_took_place",
+        "disruptive_start_epoch_sec",
+        "first_induction_epoch_sec",
+        "train_end_epoch_sec",
+        "train_duration_sec",
+        "induction_cues_count",
+    ]
+    motion_fields = [
+        "pid",
+        "night_number",
+        "condition",
+        "session_start_boston",
+        "session_end_boston",
+        "second_index",
+        "epoch_sec",
+        "time_boston",
+        "motion_per_second",
+        "motion_delta_only",
+        "motion_delta_plus_tilt15",
+        "sensor_events_per_second",
+        "sensor_event_dt_avg_ms",
+        "sensor_event_dt_max_ms",
+    ]
+    smoothed_fields = [
+        "pid",
+        "night_number",
+        "condition",
+        "session_start_boston",
+        "session_end_boston",
+        "second_index",
+        "epoch_sec",
+        "time_boston",
+        "motion_smoothed",
+    ]
 
-    write_csv(
-        cues_path,
-        [
-            "pid",
-            "night_number",
-            "condition",
-            "episode_index",
-            "train_index",
-            "cue_index",
-            "cue_type",
-            "took_place",
-            "epoch_sec",
-            "event_time_boston",
-            "volume",
-            "arousal_detected",
-        ],
-        cue_rows,
-    )
-
-    write_csv(
-        trains_path,
-        [
-            "pid",
-            "night_number",
-            "condition",
-            "episode_index",
-            "train_index",
-            "disruptive_took_place",
-            "disruptive_start_epoch_sec",
-            "first_induction_epoch_sec",
-            "train_end_epoch_sec",
-            "train_duration_sec",
-            "induction_cues_count",
-        ],
-        train_rows,
-    )
-
-    write_csv(
-        motion_path,
-        [
-            "pid",
-            "night_number",
-            "condition",
-            "session_start_boston",
-            "session_end_boston",
-            "second_index",
-            "epoch_sec",
-            "time_boston",
-            "motion_per_second",
-            "motion_delta_only",
-            "motion_delta_plus_tilt15",
-            "sensor_events_per_second",
-            "sensor_event_dt_avg_ms",
-            "sensor_event_dt_max_ms",
-        ],
-        motion_rows,
-    )
-
-    write_csv(
-        smoothed_path,
-        [
-            "pid",
-            "night_number",
-            "condition",
-            "session_start_boston",
-            "session_end_boston",
-            "second_index",
-            "epoch_sec",
-            "time_boston",
-            "motion_smoothed",
-        ],
-        smoothed_rows,
-    )
+    if incremental_merge:
+        append_csv(rem_path, rem_fields, rem_rows)
+        append_csv(cues_path, cue_fields, cue_rows)
+        append_csv(trains_path, train_fields, train_rows)
+        append_csv(motion_path, motion_fields, motion_rows)
+        append_csv(smoothed_path, smoothed_fields, smoothed_rows)
+    else:
+        write_csv(rem_path, rem_fields, rem_rows)
+        write_csv(cues_path, cue_fields, cue_rows)
+        write_csv(trains_path, train_fields, train_rows)
+        write_csv(motion_path, motion_fields, motion_rows)
+        write_csv(smoothed_path, smoothed_fields, smoothed_rows)
 
     print(f"Wrote {summary_path} ({len(summary_rows)} rows)")
     print(f"Wrote {rem_path} ({len(rem_rows)} rows)")

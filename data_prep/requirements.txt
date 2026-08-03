@@ -1,0 +1,5 @@
+# Data prep pipeline (export, survey cleaning, merge)
+pandas>=2.0.0
+openpyxl>=3.1.0
+firebase-admin>=6.5.0
+pandas-stubs>=2.2.0
